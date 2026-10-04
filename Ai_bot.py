@@ -1,9 +1,24 @@
 import asyncio
 import logging
 import os
+import http.server
+import socketserver
+import threading
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from groq import Groq
+
+# --- Render port talabini qondirish uchun kichik veb-server (24/7 ishlatish uchun) ---
+def run_dummy_server():
+    PORT = int(os.environ.get("PORT", 10000))
+    Handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", PORT), Handler) as httpd:
+        print(f"Dummy server {PORT}-portda ishga tushdi")
+        httpd.serve_forever()
+
+server_thread = threading.Thread(target=run_dummy_server, daemon=True)
+server_thread.start()
+# -----------------------------------------------------------------------------------
 
 # Token va kalitlarni serverning o'zidan o'qiymiz
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -106,6 +121,7 @@ async def answer_question(message: types.Message):
         await message.answer(f"Xatolik yuz berdi: {str(e)}")
 
 async def main():
+    print("Bot ishga tushdi...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

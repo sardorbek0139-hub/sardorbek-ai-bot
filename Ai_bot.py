@@ -68,7 +68,7 @@ async def ask_groq_with_fallback(prompt_text):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",  # Hamma kalitda ishlaydigan tezkor va barqaror model
                 messages=[
                     {
                         "role": "system",
@@ -183,7 +183,6 @@ async def answer_question(message: types.Message):
         await message.answer(f"Xatolik yuz berdi: {str(e)}")
 
 async def main():
-    # Eski webhhook'ni majburiy o'chirish va tozalash
     await bot.delete_webhook(drop_pending_updates=True)
     print("Bot ishga tushdi...")
     await dp.start_polling(bot)

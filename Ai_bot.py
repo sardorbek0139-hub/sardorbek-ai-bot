@@ -21,7 +21,6 @@ server_thread = threading.Thread(target=run_dummy_server, daemon=True)
 server_thread.start()
 # -----------------------------------------------------------------------------------
 
-# Foydalanuvchilarni users.txt fayliga saqlash funksiyasi
 def save_user(user_id):
     try:
         users = []
@@ -35,7 +34,6 @@ def save_user(user_id):
     except Exception as e:
         print(f"Foydalanuvchini saqlashda xatolik: {e}")
 
-# Token va kalitlarni serverning o'zidan o'qiymiz
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 API_KEYS_ENV = os.getenv("API_KEYS", "")
 API_KEYS = [k.strip() for k in API_KEYS_ENV.split(",") if k.strip()]
@@ -45,7 +43,6 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# Matnli xabarlar uchun Groq funksiyasi
 async def ask_groq_with_fallback(prompt_text):
     last_error = None
     for api_key in API_KEYS:
@@ -60,9 +57,10 @@ async def ask_groq_with_fallback(prompt_text):
                             "KESKIN QOIDA 1: Sening isming 'Sardorbek AI'. Kim yaratganini yoki "
                             "ismingni so'rasa, har doim va faqat: 'Mening ismim Sardorbek AI. Meni Sardorbek "
                             "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
-                            "KESKIN QOIDA 2: Matematika, fizika, kimyo va boshqa barcha fanlarning formulalarini va hisob-kitoblarini yozganda, "
-                            "ularni albatta ` ```text ... ``` ` kod bloki ichiga olib yoz. Aslo LaTeX tegralaridan foydalanma.\n"
-                            "KESKIN QOIDA 3: Dastur kodi yozganda uni doimo ` ```til ... ``` ` bloklari ichiga olib yoz.\n"
+                            "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni, tushuntirishlaringni, savol-javoblar va yechimlaringni "
+                            "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
+                            "Javobning boshidan oxirigacha kod bloki formatida bo'lishi shart, shunda matn bir xil chiroyli shriftda chiqadi.\n"
+                            "KESKIN QOIDA 3: Dastur kodi yozganda uni doimo tegishli til nomi bilan (masalan: ` ```python ... ``` `) yoz.\n"
                             "KESKIN QOIDA 4: Agar foydalanuvchi yaratuvchingiz Sardorbek Khudoyberdiyevni haqorat qilsa yoki yomon so'z yozsa, "
                             "unga darhol qat'iy ohangda ogohlantirish ber: 'Yaratuvchim Sardorbek Khudoyberdiyevni haqorat qilishga haqqingiz yo'q! Odobli bo'ling.' deb tanbeh ber."
                         )
@@ -76,6 +74,9 @@ async def ask_groq_with_fallback(prompt_text):
             )
             answer = completion.choices[0].message.content
             if answer:
+                # Agar AI javobi kod bloki bilan boshlanmasa, uni avtomatik kod blokiga olamiz
+                if not answer.strip().startswith("```"):
+                    answer = f"```text\n{answer}\n```"
                 return answer
         except Exception as e:
             last_error = e
@@ -83,15 +84,14 @@ async def ask_groq_with_fallback(prompt_text):
             
     raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
 
-# Rasmdagi matnni avtomatik o'qib beruvchi funksiya (OCR)
 async def extract_text_from_image(file_bytes):
     try:
-        url = "https://api.ocr.space/parse/image"
+        url = "[https://api.ocr.space/parse/image](https://api.ocr.space/parse/image)"
         async with aiohttp.ClientSession() as session:
             form = aiohttp.FormData()
-            form.add_field('apikey', 'K81459419388957')  # Bepul ochiq OCR kalit
+            form.add_field('apikey', 'K81459419388957')
             form.add_field('file', file_bytes, filename='image.jpg', content_type='image/jpeg')
-            form.add_field('language', 'eng')  # Inglizcha/Matematik belgilar uchun
+            form.add_field('language', 'eng')
             
             async with session.post(url, data=form) as response:
                 result = await response.json()
@@ -102,17 +102,14 @@ async def extract_text_from_image(file_bytes):
         print(f"OCR xatoligi: {e}")
     return ""
 
-# Xabarlarni xavfsiz yuborish (parse_mode xatolik chiqarmasligi uchun)
-async def send_safe_message(message: types.Message, text: str):
+async def send_markdown_message(message: types.Message, text: str):
     max_length = 4000
     for i in range(0, len(text), max_length):
         chunk = text[i:i + max_length]
         try:
-            # Markdown yoki parse_mode ishlatmasdan oddiy matn sifatida yuboramiz (xatolik chiqmaydi)
+            await message.answer(chunk, parse_mode="Markdown")
+        except Exception:
             await message.answer(chunk)
-        except Exception as e:
-            # Agar oddiy matnda ham muammo bo'lsa, belgili qismlarini tozalab yuboramiz
-            await message.answer(chunk.replace("<", "&lt;").replace(">", "&gt;"))
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
@@ -140,7 +137,6 @@ async def stats_handler(message: types.Message):
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
-# Rasm yuborilganda ishlaydigan qism
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
@@ -151,17 +147,15 @@ async def photo_handler(message: types.Message):
         file_bytes_io = await bot.download_file(file.file_path)
         file_bytes = file_bytes_io.read()
         
-        # Rasmdan matnni ajratib olamiz
         img_text = await extract_text_from_image(file_bytes)
         
         if not img_text or len(img_text) < 3:
             await wait_msg.edit_text("Rasmdan matn topib bo'lmadi. Iltimos, aniqroq rasm yuboring.")
             return
         
-        await wait_msg.edit_text("Matn o'qildi. Endi buni yechib beraman...")
+        await wait_msg.edit_text("Matn o'qildi. Endi uni kod shaklida chiroyli qilib yechib beraman...")
         
-        # Topilgan matnni AI ga uzatamiz
-        prompt = f"Mana bu rasmda quyidagi misollar yozilgan:\n{img_text}\n\nIltimos, bularning aniqlanish sohalarini va yechimlarini to'liq va tushunarli qilib yozib ber."
+        prompt = f"Mana bu rasmda quyidagi savollar/misollar yozilgan:\n{img_text}\n\nIltimos, har bir savol, uning variantlari, to'g'ri javobi va izohini to'liq holda chiroyli qilib ` ```text ... ``` ` kod bloki ichida formatlab ber."
         answer_text = await ask_groq_with_fallback(prompt)
         
         try:
@@ -169,7 +163,7 @@ async def photo_handler(message: types.Message):
         except Exception:
             pass
             
-        await send_safe_message(message, answer_text)
+        await send_markdown_message(message, answer_text)
     except Exception as e:
         logging.error(f"Rasm xatoligi: {e}")
         try:
@@ -188,7 +182,7 @@ async def answer_question(message: types.Message):
             await wait_msg.delete()
         except Exception:
             pass
-        await send_safe_message(message, answer_text)
+        await send_markdown_message(message, answer_text)
     except Exception as e:
         logging.error(f"Xatolik: {e}")
         try:

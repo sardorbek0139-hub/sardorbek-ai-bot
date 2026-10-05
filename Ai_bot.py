@@ -35,8 +35,7 @@ def save_user(user_id):
 TELEGRAM_TOKEN = "8605848716:AAEJO1uLAjZ0O9VNBSxhACBvqMarVPMTPWw"
 API_KEYS = [
     "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",
-    "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",
-    "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"
+    "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"
 ]
 
 bot = Bot(token=TELEGRAM_TOKEN)
@@ -44,10 +43,10 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# 1-QADAM: Rasmdagi matn va formulalarni o'qish (Vision model)
+# Rasmdan matn o'qish (Vision model) - xatoliklarni aniq ko'rsatish uchun yangilandi
 async def extract_text_from_image(image_bytes):
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
-    for api_key in API_KEYS:
+    for i, api_key in enumerate(API_KEYS):
         if not api_key:
             continue
         try:
@@ -60,7 +59,7 @@ async def extract_text_from_image(image_bytes):
                         "content": [
                             {
                                 "type": "text", 
-                                "text": "Bu rasmda matematik darslik sahifasi yoki misollar bor. Rasmdagi barcha matnlar, formulalar va misollarni aynan qanday yozilgan bo'lsa shunday matn (text) ko'rinishiga o'tkazib ber. Hech qanday yechim yozma, faqat matn va misollarni aniq ko'chirib ber."
+                                "text": "Bu rasmda matematik darslik sahifasi yoki misollar bor. Rasmdagi barcha matnlar, formulalar va misollarni aynan qanday yozilgan bo'lsa shunday matn (text) ko'rinishiga o'tkazib ber. Faqat matn va misollarni aniq ko'chirib ber."
                             },
                             {
                                 "type": "image_url",
@@ -78,20 +77,20 @@ async def extract_text_from_image(image_bytes):
             if extracted_text:
                 return extracted_text.strip()
         except Exception as e:
-            print(f"Matnga o'girish xatoligi: {e}")
+            print(f"Vision xatoligi ({i+1}-kalit): {e}")
             continue
     return ""
 
-# 2-QADAM: Matnni yechish uchun to'g'ri Groq text modeli
+# Matnni yechish uchun Groq text modeli
 async def ask_groq_with_fallback(prompt_text):
     last_error = None
-    for api_key in API_KEYS:
+    for i, api_key in enumerate(API_KEYS):
         if not api_key:
             continue
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",  # Ishlaydigan haqiqiy model
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {
                         "role": "system",
@@ -109,6 +108,7 @@ async def ask_groq_with_fallback(prompt_text):
                 return answer
         except Exception as e:
             last_error = e
+            print(f"Text model xatoligi ({i+1}-kalit): {e}")
             continue
     raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
 
@@ -117,7 +117,7 @@ async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga istalgan darslik yoki misol tushirilgan rasm yuboring: bot uni avval matnga o'girib, keyin yechib beradi!"
+        "Menga istalgan darslik yoki misol tushirilgan rasm yuboring: bot uni o'qib yechib beradi!"
     )
 
 @dp.message(Command("stats"))
@@ -141,7 +141,7 @@ async def stats_handler(message: types.Message):
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
-    wait_msg = await message.answer("🔍 Rasmdagi misollar matnga o'girilmoqda...")
+    wait_msg = await message.answer("🔍 Rasm tahlil qilinmoqda, biroz kuting...")
     try:
         photo = message.photo[-1]
         file = await bot.get_file(photo.file_id)
@@ -152,10 +152,10 @@ async def photo_handler(message: types.Message):
         extracted_text = await extract_text_from_image(file_bytes)
         
         if not extracted_text or len(extracted_text) < 3:
-            await wait_msg.edit_text("Rasmdan matn topib bo'lmadi. Iltimos, aniqroq rasm yuboring.")
+            await wait_msg.edit_text("❌ Rasmdan matn o'qib bo'lmadi. Iltimos, yorqinroq va aniqroq rasm yuboring.")
             return
         
-        await wait_msg.edit_text(f"📝 **Topilgan matn:**\n`{extracted_text}`\n\n⏳ Endi buni Groq'ga yuborib yechtirayapman...")
+        await wait_msg.edit_text(f"📝 **Topilgan matn:**\n`{extracted_text}`\n\n⏳ Endi buni yechib beraman...")
         
         # 2-Bosqich: Matnni Groq'ga berib yechim olish
         prompt = f"Quyida kitobdan olingan matn va misollar keltirilgan:\n\n{extracted_text}\n\nIltimos, mana shu misollarning yechimini batafsil va tushunarli qilib yozib ber."
@@ -168,7 +168,7 @@ async def photo_handler(message: types.Message):
             
         await message.answer(answer_text)
     except Exception as e:
-        logging.error(f"Xatolik: {e}")
+        logging.error(f"Rasm xatoligi tafsiloti: {e}")
         try:
             await wait_msg.delete()
         except Exception:

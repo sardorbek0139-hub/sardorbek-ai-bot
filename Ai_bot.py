@@ -4,12 +4,11 @@ import os
 import http.server
 import socketserver
 import threading
-import aiohttp
+import base64
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from groq import Groq
 
-# --- Render port talabini qondirish uchun kichik veb-server ---
 def run_dummy_server():
     PORT = int(os.environ.get("PORT", 10000))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -19,7 +18,6 @@ def run_dummy_server():
 
 server_thread = threading.Thread(target=run_dummy_server, daemon=True)
 server_thread.start()
-# -------------------------------------------------------------
 
 def save_user(user_id):
     try:
@@ -42,6 +40,59 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
+async def ask_groq_vision(image_bytes, prompt_text):
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    last_error = None
+    
+    # Groq vision modellari ro'yxati
+    vision_models = ["meta-llama/llama-3.2-90b-vision-instruct", "meta-llama/llama-3.2-11b-vision-instruct"]
+    
+    for api_key in API_KEYS:
+        for model_name in vision_models:
+            try:
+                client = Groq(api_key=api_key)
+                completion = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Siz professional matematik yordamchisiz. Rasmda keltirilgan barcha misol va masalalarni o'zingiz avtomatik o'qib, "
+                                "ularni aniq matematik belgilar (√, /, ^, ≥, ≤) yordamida matnga o'tkazing va har birining yechimlarini "
+                                "batafsil tushuntirib bering.\n"
+                                "Javobni FAQAT VA FAQAT bitta ` ```text ... ``` ` kod bloki ichida yozing. LaTeX tegralaridan foydalanmang."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": prompt_text
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{base64_image}"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    temperature=0.7,
+                    max_tokens=2048,
+                )
+                answer = completion.choices[0].message.content
+                if answer:
+                    if not answer.strip().startswith("```"):
+                        answer = f"```text\n{answer}\n```"
+                    return answer
+            except Exception as e:
+                last_error = e
+                continue
+                
+    raise last_error or Exception("Groq vision modellari ishlamadi yoki limit tugadi.")
+
 async def ask_groq_with_fallback(prompt_text):
     last_error = None
     for api_key in API_KEYS:
@@ -56,10 +107,7 @@ async def ask_groq_with_fallback(prompt_text):
                             "KESKIN QOIDA 1: Sening isming 'Sardorbek AI'. Kim yaratganini yoki "
                             "ismingni so'rasa, har doim va faqat: 'Mening ismim Sardorbek AI. Meni Sardorbek "
                             "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
-                            "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni va yechimlaringni "
-                            "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
-                            "Hech qanday LaTeX tegralaridan (masalan: `\sqrt`, `\frac`, `\bar`) foydalanma! "
-                            "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
+                            "KESKIN QOIDA 2: Barcha javoblaringni ` ```text ... ``` ` kod bloki ichida taqdim et."
                         )
                     },
                     {
@@ -77,25 +125,7 @@ async def ask_groq_with_fallback(prompt_text):
         except Exception as e:
             last_error = e
             continue
-    raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
-
-async def extract_text_from_image(file_bytes):
-    try:
-        url = "[https://api.ocr.space/parse/image](https://api.ocr.space/parse/image)"
-        async with aiohttp.ClientSession() as session:
-            form = aiohttp.FormData()
-            form.add_field('apikey', 'K81459419388957')
-            form.add_field('file', file_bytes, filename='image.jpg', content_type='image/jpeg')
-            form.add_field('language', 'eng')
-            
-            async with session.post(url, data=form) as response:
-                result = await response.json()
-                if result.get("ParsedResults"):
-                    extracted_text = result["ParsedResults"][0].get("ParsedText", "")
-                    return extracted_text.strip()
-    except Exception as e:
-        print(f"OCR xatoligi: {e}")
-    return ""
+    raise last_error or Exception("Barcha kalitlar limiti tugadi.")
 
 async def send_markdown_message(message: types.Message, text: str):
     max_length = 4000
@@ -111,7 +141,7 @@ async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga istalgan matnli savol, kod yoki rasm yuborishingiz mumkin (rasmdagi misollarni avtomatik o'qib yechib beraman)."
+        "Menga istalgan matnli savol, kod yoki rasm yuborishingiz mumkin (rasmni o'zim avtomatik o'qib yechib beraman)."
     )
 
 @dp.message(Command("stats"))
@@ -135,24 +165,16 @@ async def stats_handler(message: types.Message):
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
-    wait_msg = await message.answer("Rasmdagi matn va misollar o'qib olinmoqda...")
+    wait_msg = await message.answer("Rasm tahlil qilinmoqda...")
     try:
         photo = message.photo[-1]
         file = await bot.get_file(photo.file_id)
         file_bytes_io = await bot.download_file(file.file_path)
         file_bytes = file_bytes_io.read()
         
-        img_text = await extract_text_from_image(file_bytes)
+        prompt = "Mana bu rasmda matematik misollar va masalalar berilgan. Ularni to'liq o'qing, aniq matematik belgilarda (√, /, ^) yozing va har birining yechimlarini batafsil tushuntirib bering."
         
-        if not img_text or len(img_text) < 2:
-            await wait_msg.edit_text("Rasmdan matn topib bo'lmadi. Iltimos, yorqinroq va aniqroq rasm yuboring.")
-            return
-            
-        await wait_msg.edit_text("Matn muvaffaqiyatli o'qildi. Endi yechimlarini tayyorlayapman...")
-        
-        prompt = f"Mana bu rasmda quyidagi matematik misollar va masalalar yozilgan:\n{img_text}\n\nIltimos, ularning har birining aniqlanish sohalarini (domain) va batafsil yechimlarini tushunarli matn va belgilar (√, /, ^) yordamida chiroyli qilib yozib bering."
-        
-        answer_text = await ask_groq_with_fallback(prompt)
+        answer_text = await ask_groq_vision(file_bytes, prompt)
         
         try:
             await wait_msg.delete()

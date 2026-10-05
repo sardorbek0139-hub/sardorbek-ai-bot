@@ -1,14 +1,3 @@
-import sys
-import subprocess
-
-# Kutubxonalar o'rnatilganligini tekshirish va avtomatik o'rnatish
-required_packages = ["aiogram", "groq", "aiohttp", "google-genai"]
-for package in required_packages:
-    try:
-        __import__(package.replace("-", "_"))
-    except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
 import asyncio
 import logging
 import os
@@ -65,7 +54,7 @@ async def ask_groq(prompt_text):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 messages=[
                     {
                         "role": "system",
@@ -75,7 +64,7 @@ async def ask_groq(prompt_text):
                             "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
                             "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni va yechimlaringni "
                             "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
-                            "Hech qanday LaTeX tegralaridan (masalan: `\\sqrt`, `\\frac`, `\\bar`) foydalanma! "
+                            "Hech qanday LaTeX tegralaridan foydalanma! "
                             "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
                         )
                     },
@@ -96,7 +85,7 @@ async def ask_groq(prompt_text):
             continue
     raise last_error or Exception("Groq kalitlari ishlamadi.")
 
-# 2. RASM UCHUN GEMINI FUNKSIYASI (Faqat Gemini 2.5-flash)
+# 2. RASM UCHUN GEMINI FUNKSIYASI
 async def ask_gemini_vision(prompt_text, image_bytes):
     if not GEMINI_KEYS:
         raise Exception("GEMINI_API_KEYS topilmadi! Render environment variables ga qo'shing.")
@@ -173,7 +162,6 @@ async def stats_handler(message: types.Message):
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
-# Rasmlar uchun handler (Faqat GEMINI ishlaydi)
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
@@ -202,7 +190,6 @@ async def photo_handler(message: types.Message):
             pass
         await message.answer(f"Xatolik yuz berdi: {str(e)}")
 
-# Matnlar uchun handler (Faqat GROQ ishlaydi)
 @dp.message(F.text & ~F.text.startswith("/"))
 async def answer_question(message: types.Message):
     save_user(message.from_user.id)

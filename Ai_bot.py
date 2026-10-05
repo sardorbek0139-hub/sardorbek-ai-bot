@@ -9,7 +9,6 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from groq import Groq
 
-# --- Render port talabini qondirish uchun kichik veb-server (24/7 ishlatish uchun) ---
 def run_dummy_server():
     PORT = int(os.environ.get("PORT", 10000))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -19,7 +18,6 @@ def run_dummy_server():
 
 server_thread = threading.Thread(target=run_dummy_server, daemon=True)
 server_thread.start()
-# -----------------------------------------------------------------------------------
 
 def save_user(user_id):
     try:
@@ -27,7 +25,6 @@ def save_user(user_id):
         if os.path.exists("users.txt"):
             with open("users.txt", "r") as f:
                 users = f.read().splitlines()
-        
         if str(user_id) not in users:
             with open("users.txt", "a") as f:
                 f.write(f"{user_id}\n")
@@ -43,7 +40,6 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# Matnli so'rovlar uchun Groq funksiyasi
 async def ask_groq_with_fallback(prompt_text):
     last_error = None
     for api_key in API_KEYS:
@@ -60,11 +56,7 @@ async def ask_groq_with_fallback(prompt_text):
                             "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
                             "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni boshidan oxirigacha FAQAT VA FAQAT bitta ` ```text ... ``` ` kod bloki ichida to'liq taqdim et. "
                             "Hech qanday LaTeX tegralaridan (masalan: `\sqrt`, `\frac`, `\bar` va hokazo) mutlaqo foydalanma! "
-                            "Barcha matematik formulalarni oddiy tushunarli matn shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`). "
-                            "Javob tashqarisida oddiy matn qolmasin, hammasi kod bloki ichida chiroyli jadvalli yoki qolipli ko'rinishda bo'lsin.\n"
-                            "KESKIN QOIDA 3: Dastur kodi yozganda uni doimo tegishli til nomi bilan (masalan: ` ```python ... ``` `) yoz.\n"
-                            "KESKIN QOIDA 4: Agar foydalanuvchi yaratuvchingiz Sardorbek Khudoyberdiyevni haqorat qilsa yoki yomon so'z yozsa, "
-                            "unga darhol qat'iy ohangda ogohlantirish ber: 'Yaratuvchim Sardorbek Khudoyberdiyevni haqorat qilishga haqqingiz yo'q! Odobli bo'ling.' deb tanbeh ber."
+                            "Barcha matematik formulalarni oddiy tushunarli matn shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`)."
                         )
                     },
                     {
@@ -82,57 +74,59 @@ async def ask_groq_with_fallback(prompt_text):
         except Exception as e:
             last_error = e
             continue
-            
     raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
 
-# Rasmni to'g'ridan-to'g'ri tahlil qilish uchun Vision Groq funksiyasi
 async def ask_groq_vision_with_fallback(image_bytes, prompt_text):
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
     last_error = None
     
+    # Groq-da hozirda rasm o'qiydigan barqaror modellardan biri
+    vision_models = ["llama-3.2-90b-vision-preview", "llama-3.2-11b-vision-preview"]
+    
     for api_key in API_KEYS:
-        try:
-            client = Groq(api_key=api_key)
-            completion = client.chat.completions.create(
-                model="qwen/qwen3.6-27b",  # Tasdiqlangan va joriy ishlaydigan vision model
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Siz kuchli matematik yordamchisiz. Rasmda keltirilgan barcha misol va masalalarni o'qing, "
-                            "ularning aniqlanish sohalarini (domain) va to'liq yechimlarini batafsil tushuntirib bering. "
-                            "Javobni FAQAT VA FAQAT bitta ` ```text ... ``` ` kod bloki ichida yozing. "
-                            "LaTeX tegralaridan foydalanmang, oddiy tushunarli matn va belgilardan (`√`, `/`, `^`, `≥`, `≤`) foydalaning."
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": prompt_text
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
+        for model_name in vision_models:
+            try:
+                client = Groq(api_key=api_key)
+                completion = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Siz kuchli matematik yordamchisiz. Rasmda keltirilgan barcha misol va masalalarni o'qing, "
+                                "ularning aniqlanish sohalarini (domain) va to'liq yechimlarini batafsil tushuntirib bering. "
+                                "Javobni FAQAT VA FAQAT bitta ` ```text ... ``` ` kod bloki ichida yozing. "
+                                "LaTeX tegralaridan foydalanmang, oddiy tushunarli matn va belgilardan (`√`, `/`, `^`, `≥`, `≤`) foydalaning."
+                            )
+                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": prompt_text
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{base64_image}"
+                                    }
                                 }
-                            }
-                        ]
-                    }
-                ],
-                temperature=0.7,
-                max_tokens=2048,
-            )
-            answer = completion.choices[0].message.content
-            if answer:
-                if not answer.strip().startswith("```"):
-                    answer = f"```text\n{answer}\n```"
-                return answer
-        except Exception as e:
-            last_error = e
-            continue
-            
+                            ]
+                        }
+                    ],
+                    temperature=0.7,
+                    max_tokens=2048,
+                )
+                answer = completion.choices[0].message.content
+                if answer:
+                    if not answer.strip().startswith("```"):
+                        answer = f"```text\n{answer}\n```"
+                    return answer
+            except Exception as e:
+                last_error = e
+                continue
+                
     raise last_error or Exception("Vision modellari ishlamadi yoki limit tugadi.")
 
 async def send_markdown_message(message: types.Message, text: str):

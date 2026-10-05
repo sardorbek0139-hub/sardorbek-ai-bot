@@ -4,10 +4,11 @@ import os
 import http.server
 import socketserver
 import threading
-import base64
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from groq import Groq
+from google import genai
+from google.genai import types as genai_types
 
 def run_dummy_server():
     PORT = int(os.environ.get("PORT", 10000))
@@ -32,67 +33,22 @@ def save_user(user_id):
         print(f"Foydalanuvchini saqlashda xatolik: {e}")
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+# Matn uchun Groq kalitlari (Render Environment variables dan o'qiydi)
 API_KEYS_ENV = os.getenv("API_KEYS", "")
 API_KEYS = [k.strip() for k in API_KEYS_ENV.split(",") if k.strip()]
+
+# Rasm uchun Gemini kalitlari (Render Environment variables dan o'qiydi)
+GEMINI_KEYS_ENV = os.getenv("GEMINI_API_KEYS", "")
+GEMINI_KEYS = [k.strip() for k in GEMINI_KEYS_ENV.split(",") if k.strip()]
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-async def ask_groq_vision_with_fallback(prompt_text, image_bytes):
-    last_error = None
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
-    image_url = f"data:image/jpeg;base64,{base64_image}"
-
-    for api_key in API_KEYS:
-        try:
-            client = Groq(api_key=api_key)
-            completion = client.chat.completions.create(
-                model="llama-3.2-90b-vision-preview",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "KESKIN QOIDA 1: Sening isming 'Sardorbek AI'. Kim yaratganini yoki "
-                            "ismingni so'rasa, har doim va faqat: 'Mening ismim Sardorbek AI. Meni Sardorbek "
-                            "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
-                            "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni va yechimlaringni "
-                            "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
-                            "Hech qanday LaTeX tegralaridan (masalan: `\sqrt`, `\frac`, `\bar`) foydalanma! "
-                            "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": prompt_text
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_url
-                                }
-                            }
-                        ]
-                    }
-                ],
-                temperature=0.7,
-                max_tokens=2048,
-            )
-            answer = completion.choices[0].message.content
-            if answer:
-                if not answer.strip().startswith("```"):
-                    answer = f"```text\n{answer}\n```"
-                return answer
-        except Exception as e:
-            last_error = e
-            continue
-    raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
-
-async def ask_groq_with_fallback(prompt_text):
+# 1. MATN UCHUN GROQ FUNKSIYASI
+async def ask_groq(prompt_text):
     last_error = None
     for api_key in API_KEYS:
         try:
@@ -127,7 +83,49 @@ async def ask_groq_with_fallback(prompt_text):
         except Exception as e:
             last_error = e
             continue
-    raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
+    raise last_error or Exception("Groq kalitlari ishlamadi.")
+
+# 2. RASM UCHUN GEMINI FUNKSIYASI (Fallback bilan)
+async def ask_gemini_vision(prompt_text, image_bytes):
+    if not GEMINI_KEYS:
+        raise Exception("GEMINI_API_KEYS topilmadi! Render environment variables ga qo'shing.")
+    
+    last_error = None
+    for gemini_key in GEMINI_KEYS:
+        try:
+            client = genai.Client(api_key=gemini_key)
+            
+            system_instruction = (
+                "Sening isming 'Sardorbek AI'. Kim yaratganini yoki ismingni so'rasa, har doim va faqat: "
+                "'Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan' deb javob ber. "
+                "Barcha javoblaringni va yechimlaringni to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
+                "Hech qanday LaTeX tegralaridan (masalan: `\sqrt`, `\frac`, `\bar`) foydalanma! "
+                "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
+            )
+            
+            full_prompt = f"{system_instruction}\n\nFoydalanuvchi yuborgan rasm bo'yicha ko'rsatma: {prompt_text}"
+            
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[
+                    genai_types.Part.from_bytes(
+                        data=image_bytes,
+                        mime_type='image/jpeg',
+                    ),
+                    full_prompt
+                ]
+            )
+            
+            answer = response.text
+            if answer:
+                if not answer.strip().startswith("```"):
+                    answer = f"```text\n{answer}\n```"
+                return answer
+        except Exception as e:
+            last_error = e
+            continue
+            
+    raise last_error or Exception("Barcha Gemini kalitlari limiti tugadi yoki ishlamadi.")
 
 async def send_markdown_message(message: types.Message, text: str):
     max_length = 4000
@@ -164,19 +162,20 @@ async def stats_handler(message: types.Message):
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
+# Rasmlar uchun handler (Faqat GEMINI ishlaydi)
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
-    wait_msg = await message.answer("Rasm tahlil qilinmoqda va misollar yechilmoqda...")
+    wait_msg = await message.answer("Rasm Gemini orqali tahlil qilinmoqda...")
     try:
         photo = message.photo[-1]
         file = await bot.get_file(photo.file_id)
         file_bytes_io = await bot.download_file(file.file_path)
         file_bytes = file_bytes_io.read()
         
-        prompt = "Iltimos, ushbu rasmda ko'rsatilgan barcha matematik misollar va masalalarni o'qib, ularning har birining aniqlanish sohalarini (domain) va batafsil yechimlarini tushunarli matn va belgilar (√, /, ^) yordamida chiroyli qilib yozib bering."
+        prompt = "Ushbu rasmda ko'rsatilgan barcha matematik misollar va masalalarni o'qib, ularning har birining aniqlanish sohalarini (domain) va batafsil yechimlarini tushunarli matn va belgilar (√, /, ^) yordamida chiroyli qilib yozib bering."
         
-        answer_text = await ask_groq_vision_with_fallback(prompt, file_bytes)
+        answer_text = await ask_gemini_vision(prompt, file_bytes)
         
         try:
             await wait_msg.delete()
@@ -185,26 +184,27 @@ async def photo_handler(message: types.Message):
             
         await send_markdown_message(message, answer_text)
     except Exception as e:
-        logging.error(f"Rasm xatoligi: {e}")
+        logging.error(f"Gemini rasm xatoligi: {e}")
         try:
             await wait_msg.delete()
         except Exception:
             pass
         await message.answer(f"Xatolik yuz berdi: {str(e)}")
 
+# Matnlar uchun handler (Faqat GROQ ishlaydi)
 @dp.message(F.text & ~F.text.startswith("/"))
 async def answer_question(message: types.Message):
     save_user(message.from_user.id)
     wait_msg = await message.answer("O'ylayapman...")
     try:
-        answer_text = await ask_groq_with_fallback(message.text.strip())
+        answer_text = await ask_groq(message.text.strip())
         try:
             await wait_msg.delete()
         except Exception:
             pass
         await send_markdown_message(message, answer_text)
     except Exception as e:
-        logging.error(f"Xatolik: {e}")
+        logging.error(f"Groq xatoligi: {e}")
         try:
             await wait_msg.delete()
         except Exception:

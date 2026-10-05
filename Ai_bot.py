@@ -6,8 +6,8 @@ import socketserver
 import threading
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-import aiohttp
 from groq import Groq
+import base64
 
 # Render uchun dummy server
 def run_dummy_server():
@@ -20,7 +20,6 @@ def run_dummy_server():
 server_thread = threading.Thread(target=run_dummy_server, daemon=True)
 server_thread.start()
 
-# Foydalanuvchilarni saqlash
 def save_user(user_id):
     try:
         users = []
@@ -39,35 +38,54 @@ API_KEYS = [
     "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",
     "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"
 ]
-OCR_API_KEY = os.getenv("OCR_API_KEY", "KXYZ...")
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# 1-QADAM: Rasmdan matnni avtomatik o'qib olish (OCR)
-async def extract_text_from_image(file_bytes):
-    url = "https://api.ocr.space/parse/image"
-    async with aiohttp.ClientSession() as session:
-        form = aiohttp.FormData()
-        form.add_field('apikey', OCR_API_KEY)
-        form.add_field('file', file_bytes, filename='image.jpg', content_type='image/jpeg')
-        form.add_field('language', 'eng')  # Ruscha yoki o'zbekcha bo'lsa 'rus' yoki 'uzb' qilish mumkin
+# 1-QADAM: Rasmdagi barcha yozuv va formulalarni matnga o'tkazish
+async def extract_text_from_image(image_bytes):
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    for api_key in API_KEYS:
+        if not api_key:
+            continue
         try:
-            async with session.post(url, data=form) as response:
-                result = await response.json()
-                if result.get("ParsedResults"):
-                    extracted_text = result["ParsedResults"][0].get("ParsedText", "")
-                    return extracted_text.strip()
+            client = Groq(api_key=api_key)
+            completion = client.chat.completions.create(
+                model="llama-3.2-11b-vision-preview",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text", 
+                                "text": "Bu rasmda matematik darslik sahifasi yoki misollar bor. Rasmdagi barcha matnlar, formulalar va misollarni aynan qanday yozilgan bo'lsa shunday matn (text) ko'rinishiga o'tkazib ber. Hech qanday yechim yozma, faqat matn va misollarni aniq ko'chirib ber."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=1024
+            )
+            extracted_text = completion.choices[0].message.content
+            if extracted_text:
+                return extracted_text.strip()
         except Exception as e:
-            print(f"OCR xatoligi: {e}")
-        return ""
+            print(f"Matnga o'girish xatoligi: {e}")
+            continue
+    return ""
 
 # 2-QADAM: Olingan matnni Groq'ga yuborib yechim olish
 async def ask_groq_with_fallback(prompt_text):
     last_error = None
-    for i, api_key in enumerate(API_KEYS):
+    for api_key in API_KEYS:
         if not api_key:
             continue
         try:
@@ -99,7 +117,7 @@ async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga istalgan matnli savol, kod yoki rasm yuborishingiz mumkin (rasmdagi misollarni avtomatik o'qib yechib beraman)."
+        "Menga istalgan darslik yoki misol tushirilgan rasm yuboring: bot uni avval matnga o'girib, keyin yechib beradi!"
     )
 
 @dp.message(Command("stats"))
@@ -120,28 +138,27 @@ async def stats_handler(message: types.Message):
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
-# Rasm kelganda: avval matnga o'giramiz, keyin Groq'ga berib yechtiramiz
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
-    wait_msg = await message.answer("🔍 Rasmdagi misol va matnlarni o'qib chiqyapman...")
+    wait_msg = await message.answer("🔍 Rasmdagi misollar matnga o'girilmoqda...")
     try:
         photo = message.photo[-1]
         file = await bot.get_file(photo.file_id)
         file_bytes_io = await bot.download_file(file.file_path)
         file_bytes = file_bytes_io.read()
         
-        # 1. Rasmdan matnni ajratib olish
-        img_text = await extract_text_from_image(file_bytes)
+        # 1-Bosqich: Rasmdan matn hosil qilish
+        extracted_text = await extract_text_from_image(file_bytes)
         
-        if not img_text or len(img_text) < 3:
-            await wait_msg.edit_text("Rasmdan matn topib bo'lmadi. Iltimos, yorqinroq va aniqroq rasm yuboring.")
+        if not extracted_text or len(extracted_text) < 3:
+            await wait_msg.edit_text("Rasmdan matn topib bo'lmadi. Iltimos, aniqroq rasm yuboring.")
             return
         
-        await wait_msg.edit_text(f"📝 **Topilgan matn:**\n`{img_text}`\n\n⏳ Endi buni yechyapman...")
+        await wait_msg.edit_text(f"📝 **Topilgan matn:**\n`{extracted_text}`\n\n⏳ Endi buni Groq'ga yuborib yechtirayapman...")
         
-        # 2. Matnni Groq'ga yuborish
-        prompt = f"Mana bu rasmda quyidagi matn/misollar yozilgan:\n{img_text}\n\nIltimos, bularning yechimini to'liq va tushunarli qilib yozib ber."
+        # 2-Bosqich: Matnni Groq'ga berib yechim olish
+        prompt = f"Quyida kitobdan olingan matn va misollar keltirilgan:\n\n{extracted_text}\n\nIltimos, mana shu misollarning yechimini batafsil va tushunarli qilib yozib ber."
         answer_text = await ask_groq_with_fallback(prompt)
         
         try:
@@ -151,7 +168,7 @@ async def photo_handler(message: types.Message):
             
         await message.answer(answer_text)
     except Exception as e:
-        logging.error(f"Rasm xatoligi: {e}")
+        logging.error(f"Xatolik: {e}")
         try:
             await wait_msg.delete()
         except Exception:
@@ -170,7 +187,7 @@ async def answer_question(message: types.Message):
             pass
         await message.answer(answer_text)
     except Exception as e:
-        logging.error(f"Xatolik tafsiloti: {e}")
+        logging.error(f"Xatolik: {e}")
         try:
             await wait_msg.delete()
         except Exception:

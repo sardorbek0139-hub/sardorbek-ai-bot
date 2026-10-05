@@ -4,7 +4,7 @@ import os
 import http.server
 import socketserver
 import threading
-import base64
+import aiohttp
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from groq import Groq
@@ -83,41 +83,24 @@ async def ask_groq_with_fallback(prompt_text):
             
     raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
 
-# Rasmlar uchun Groq Vision funksiyasi
-async def ask_groq_vision_with_fallback(image_url, prompt_text):
-    last_error = None
-    vision_models = ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"]
-    for api_key in API_KEYS:
-        try:
-            client = Groq(api_key=api_key)
-            for model in vision_models:
-                try:
-                    completion = client.chat.completions.create(
-                        model=model,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "Sening isming 'Sardorbek AI'. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. Rasmlarni diqqat bilan tahlil qilib, o'zbek tilida aniq va batafsil javob ber."
-                            },
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": prompt_text},
-                                    {"type": "image_url", "image_url": {"url": image_url}}
-                                ]
-                            }
-                        ],
-                        temperature=0.7,
-                    )
-                    answer = completion.choices[0].message.content
-                    if answer:
-                        return answer
-                except Exception:
-                    continue
-        except Exception as e:
-            last_error = e
-            continue
-    raise last_error or Exception("Rasm uchun mos keladigan API kalit topilmadi yoki limit tugagan.")
+# Rasmdagi matnni avtomatik o'qib beruvchi funksiya (OCR)
+async def extract_text_from_image(file_bytes):
+    try:
+        url = "https://api.ocr.space/parse/image"
+        async with aiohttp.ClientSession() as session:
+            form = aiohttp.FormData()
+            form.add_field('apikey', 'K81459419388957')  # Bepul ochiq OCR kalit
+            form.add_field('file', file_bytes, filename='image.jpg', content_type='image/jpeg')
+            form.add_field('language', 'eng')  # Inglizcha/Matematik belgilar uchun
+            
+            async with session.post(url, data=form) as response:
+                result = await response.json()
+                if result.get("ParsedResults"):
+                    extracted_text = result["ParsedResults"][0].get("ParsedText", "")
+                    return extracted_text.strip()
+    except Exception as e:
+        print(f"OCR xatoligi: {e}")
+    return ""
 
 async def send_long_message(message: types.Message, text: str):
     max_length = 4000
@@ -152,7 +135,7 @@ async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga istalgan matnli savol, kod yoki rasm yuborishingiz mumkin, tahlil qilib yechib beraman."
+        "Menga istalgan matnli savol, kod yoki **rasm** yuborishingiz mumkin (rasmdagi misollarni avtomatik o'qib yechib beraman)."
     )
 
 @dp.message(Command("stats"))
@@ -174,35 +157,43 @@ async def stats_handler(message: types.Message):
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
-# Rasm yuborilganda ishlaydigan qism
+# Rasm yuborilganda uni avtomatik matnga o'tkazib ishlaydigan qism
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
-    wait_msg = await message.answer("🖼 Rasmni tahlil qilyapman...")
+    wait_msg = await message.answer("🔍 Rasmdagi matn va misollarni o'qib chiqyapman...")
     try:
         photo = message.photo[-1]
         file = await bot.get_file(photo.file_id)
-        file_bytes = await bot.download_file(file.file_path)
+        file_bytes_io = await bot.download_file(file.file_path)
+        file_bytes = file_bytes_io.read()
         
-        encoded_image = base64.b64encode(file_bytes.read()).decode('utf-8')
-        image_url = f"data:image/jpeg;base64,{encoded_image}"
+        # Rasmdan matnni ajratib olamiz
+        img_text = await extract_text_from_image(file_bytes)
         
-        caption = message.caption or "Bu rasmda nima tasvirlangan? Iltimos, tushuntirib bering."
+        if not img_text or len(img_text) < 3:
+            await wait_msg.edit_text("❌ Rasmdan matn topib bo'lmadi. Iltimos, matnliroq yoki aniqroq rasm yuboring.")
+            return
         
-        answer_text = await ask_groq_vision_with_fallback(image_url, caption)
+        await wait_msg.edit_text(f"📝 **Topilgan matn:**\n<code>{img_text}</code>\n\n⏳ Endi buni yechib beraman...", parse_mode="HTML")
+        
+        # Topilgan matnni AI ga uzatamiz
+        prompt = f"Mana bu rasmdan o'qib olingan shart va misollar:\n{image_caption := message.caption or ''}\n{img_text}\n\nIltimos, buni to'liq tushuntirib va qoidaga amal qilgan holda yechib ber."
+        answer_text = await ask_groq_with_fallback(prompt)
         
         try:
             await wait_msg.delete()
         except Exception:
             pass
+            
         await send_long_message(message, answer_text)
     except Exception as e:
-        logging.error(f"Rasm xatoligi: {e}")
+        logging.error(f"Rasm avto-tex xatoligi: {e}")
         try:
             await wait_msg.delete()
         except Exception:
             pass
-        await message.answer(f"Rasm bilan ishlashda xatolik yuz berdi: {str(e)}")
+        await message.answer(f"Xatolik yuz berdi: {str(e)}")
 
 @dp.message(F.text & ~F.text.startswith("/"))
 async def answer_question(message: types.Message):

@@ -53,11 +53,19 @@ async def ask_groq_with_fallback(prompt_text):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="openai/gpt-oss-120b",  # Ishlayotgan to'g'ri model nomi
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {
                         "role": "system",
-                        "content": "KESKIN QOIDA: Seni Sardorbek Khudoyberdiyev Dasturchi yaratgan. Kim yaratganini so'rasa har doim va faqat shu javobni ber. Aslo Google yoki Gemini dema."
+                        "content": (
+                            "KESKIN QOIDA 1: Seni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
+                            "Kim yaratganini so'rasa har doim va faqat shu javobni ber. Aslo Google yoki Gemini dema.\n"
+                            "KESKIN QOIDA 2: Aslo LaTeX belgilaridan (masalan, \( ... \), \[, \], \pi va hokazo) foydalanma! "
+                            "Matematik ifodalar va formulalarni oddiy tushunarli matn va belgilarda (masalan, x^2, sqrt(x), pi) yoki "
+                            "kod oynalari ichida chiroyli qilib yoz.\n"
+                            "KESKIN QOIDA 3: Dasturlash kodlari yoki javoblarni Telegram'da chiroyli ko'rinishi uchun alohida kod oynasiga "
+                            "(markdown formatidagi ```til ... ``` bloklariga) olib yoz."
+                        )
                     },
                     {
                         "role": "user",
@@ -82,7 +90,7 @@ async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga istalgan matnli savol yoki dasturlash kodi yuboring, yechib beraman."
+        "Menga istalgan matematik masala yoki dasturlash kodi yuboring, chiroyli qilib yechib beraman."
     )
 
 @dp.message(Command("stats"))
@@ -107,6 +115,7 @@ async def stats_handler(message: types.Message):
 async def answer_question(message: types.Message):
     save_user(message.from_user.id)
     wait_msg = await message.answer("⏳ O'ylayapman...")
+    answer_text = ""
     try:
         answer_text = await ask_groq_with_fallback(message.text.strip())
         
@@ -115,7 +124,7 @@ async def answer_question(message: types.Message):
         except Exception:
             pass
             
-        await message.answer(answer_text)
+        await message.answer(answer_text, parse_mode="Markdown")
         
     except Exception as e:
         logging.error(f"Xatolik tafsiloti: {e}")
@@ -123,7 +132,13 @@ async def answer_question(message: types.Message):
             await wait_msg.delete()
         except Exception:
             pass
-        await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
+        try:
+            if answer_text:
+                await message.answer(answer_text)
+            else:
+                await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
+        except Exception:
+            await message.answer("❌ Xatolik yuz berdi.")
 
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)

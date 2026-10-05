@@ -44,7 +44,7 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# 1-QADAM: Rasmdagi barcha yozuv va formulalarni matnga o'tkazish
+# 1-QADAM: Rasmdagi matn va formulalarni o'qish (Vision model)
 async def extract_text_from_image(image_bytes):
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
     for api_key in API_KEYS:
@@ -82,7 +82,7 @@ async def extract_text_from_image(image_bytes):
             continue
     return ""
 
-# 2-QADAM: Olingan matnni Groq'ga yuborib yechim olish
+# 2-QADAM: Matnni yechish uchun to'g'ri Groq text modeli
 async def ask_groq_with_fallback(prompt_text):
     last_error = None
     for api_key in API_KEYS:
@@ -91,7 +91,7 @@ async def ask_groq_with_fallback(prompt_text):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="openai/gpt-oss-120b",
+                model="llama-3.3-70b-versatile",  # Ishlaydigan haqiqiy model
                 messages=[
                     {
                         "role": "system",

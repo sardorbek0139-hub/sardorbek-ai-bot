@@ -1,141 +1,33 @@
-import asyncio
-import logging
-import os
-import http.server
-import socketserver
-import threading
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from google import genai
-from google.genai import types as genai_types
-
-def run_dummy_server():
-    PORT = int(os.environ.get("PORT", 10000))
-    Handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"Dummy server {PORT}-portda ishga tushdi")
-        httpd.serve_forever()
-
-server_thread = threading.Thread(target=run_dummy_server, daemon=True)
-server_thread.start()
-
-def save_user(user_id):
-    try:
-        users = []
-        if os.path.exists("users.txt"):
-            with open("users.txt", "r") as f:
-                users = f.read().splitlines()
-        if str(user_id) not in users:
-            with open("users.txt", "a") as f:
-                f.write(f"{user_id}\n")
+form.add_field('file', file_bytes, filename='image.jpg', content_type='image/jpeg')
+            form.add_field('language', 'eng')  # Inglizcha/Matematik belgilar uchun
+            
+            async with session.post(url, data=form) as response:
+                result = await response.json()
+                if result.get("ParsedResults"):
+                    extracted_text = result["ParsedResults"][0].get("ParsedText", "")
+                    return extracted_text.strip()
     except Exception as e:
-        print(f"Foydalanuvchini saqlashda xatolik: {e}")
+        print(f"OCR xatoligi: {e}")
+    return ""
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-# Hamma narsa uchun Gemini kalitlaridan foydalanamiz
-GEMINI_KEYS_ENV = os.getenv("GEMINI_API_KEYS", "")
-GEMINI_KEYS = [k.strip() for k in GEMINI_KEYS_ENV.split(",") if k.strip()]
-
-bot = Bot(token=TELEGRAM_TOKEN)
-dp = Dispatcher()
-
-logging.basicConfig(level=logging.INFO)
-
-# MATN UCHUN GEMINI FUNKSIYASI
-async def ask_gemini_text(prompt_text):
-    if not GEMINI_KEYS:
-        raise Exception("GEMINI_API_KEYS topilmadi! Render environment variables ga qo'shing.")
-    
-    last_error = None
-    for gemini_key in GEMINI_KEYS:
-        try:
-            client = genai.Client(api_key=gemini_key)
-            
-            system_instruction = (
-                "KESKIN QOIDA 1: Sening isming 'Sardorbek AI'. Kim yaratganini yoki "
-                "ismingni so'rasa, har doim va faqat: 'Mening ismim Sardorbek AI. Meni Sardorbek "
-                "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
-                "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni va yechimlaringni "
-                "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
-                "Hech qanday LaTeX tegralaridan foydalanma! "
-                "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
-            )
-            
-            full_prompt = f"{system_instruction}\n\nFoydalanuvchi savoli: {prompt_text}"
-            
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=full_prompt
-            )
-            
-            answer = response.text
-            if answer:
-                if not answer.strip().startswith("```"):
-                    answer = f"```text\n{answer}\n```"
-                return answer
-        except Exception as e:
-            last_error = e
-            continue
-    raise last_error or Exception("Barcha Gemini kalitlari limiti tugadi yoki ishlamadi.")
-
-# RASM UCHUN GEMINI FUNKSIYASI
-async def ask_gemini_vision(prompt_text, image_bytes):
-    if not GEMINI_KEYS:
-        raise Exception("GEMINI_API_KEYS topilmadi! Render environment variables ga qo'shing.")
-    
-    last_error = None
-    for gemini_key in GEMINI_KEYS:
-        try:
-            client = genai.Client(api_key=gemini_key)
-            
-            system_instruction = (
-                "Sening isming 'Sardorbek AI'. Kim yaratganini yoki ismingni so'rasa, har doim va faqat: "
-                "'Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan' deb javob ber. "
-                "Barcha javoblaringni va yechimlaringni to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
-                "Hech qanday LaTeX tegralaridan foydalanma! "
-                "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
-            )
-            
-            full_prompt = f"{system_instruction}\n\nFoydalanuvchi yuborgan rasm bo'yicha ko'rsatma: {prompt_text}"
-            
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[
-                    genai_types.Part.from_bytes(
-                        data=image_bytes,
-                        mime_type='image/jpeg',
-                    ),
-                    full_prompt
-                ]
-            )
-            
-            answer = response.text
-            if answer:
-                if not answer.strip().startswith("```"):
-                    answer = f"```text\n{answer}\n```"
-                return answer
-        except Exception as e:
-            last_error = e
-            continue
-            
-    raise last_error or Exception("Barcha Gemini kalitlari limiti tugadi yoki ishlamadi.")
-
-async def send_markdown_message(message: types.Message, text: str):
+# Xabarlarni xavfsiz yuborish (parse_mode xatolik chiqarmasligi uchun)
+async def send_safe_message(message: types.Message, text: str):
     max_length = 4000
     for i in range(0, len(text), max_length):
         chunk = text[i:i + max_length]
         try:
-            await message.answer(chunk, parse_mode="Markdown")
-        except Exception:
+            # Markdown yoki parse_mode ishlatmasdan oddiy matn sifatida yuboramiz (xatolik chiqmaydi)
             await message.answer(chunk)
+        except Exception as e:
+            # Agar oddiy matnda ham muammo bo'lsa, belgili qismlarini tozalab yuboramiz
+            await message.answer(chunk.replace("<", "&lt;").replace(">", "&gt;"))
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga istalgan matnli savol, kod yoki rasm yuborishingiz mumkin (rasmdagi misollarni o'zim ko'rib yechib beraman)."
+        "Menga istalgan matnli savol, kod yoki rasm yuborishingiz mumkin (rasmdagi misollarni avtomatik o'qib yechib beraman)."
     )
 
 @dp.message(Command("stats"))
@@ -156,28 +48,38 @@ async def stats_handler(message: types.Message):
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
+# Rasm yuborilganda ishlaydigan qism
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
-    wait_msg = await message.answer("Rasm Gemini orqali tahlil qilinmoqda...")
+    wait_msg = await message.answer("Rasmdagi matn va misollarni o'qib chiqyapman...")
     try:
         photo = message.photo[-1]
         file = await bot.get_file(photo.file_id)
         file_bytes_io = await bot.download_file(file.file_path)
         file_bytes = file_bytes_io.read()
         
-        prompt = "Ushbu rasmda ko'rsatilgan barcha matematik misollar va masalalarni o'qib, ularning har birining aniqlanish sohalarini (domain) va batafsil yechimlarini tushunarli matn va belgilar (√, /, ^) yordamida chiroyli qilib yozib bering."
+        # Rasmdan matnni ajratib olamiz
+        img_text = await extract_text_from_image(file_bytes)
         
-        answer_text = await ask_gemini_vision(prompt, file_bytes)
+        if not img_text or len(img_text) < 3:
+            await wait_msg.edit_text("Rasmdan matn topib bo'lmadi. Iltimos, aniqroq rasm yuboring.")
+            return
+        
+        await wait_msg.edit_text("Matn o'qildi. Endi buni yechib beraman...")
+        
+        # Topilgan matnni AI ga uzatamiz
+        prompt = f"Mana bu rasmda quyidagi misollar yozilgan:\n{img_text}\n\nIltimos, bularning aniqlanish sohalarini va yechimlarini to'liq va tushunarli qilib yozib ber."
+        answer_text = await ask_groq_with_fallback(prompt)
         
         try:
             await wait_msg.delete()
         except Exception:
             pass
             
-        await send_markdown_message(message, answer_text)
+        await send_safe_message(message, answer_text)
     except Exception as e:
-        logging.error(f"Gemini rasm xatoligi: {e}")
+        logging.error(f"Rasm xatoligi: {e}")
         try:
             await wait_msg.delete()
         except Exception:
@@ -189,14 +91,14 @@ async def answer_question(message: types.Message):
     save_user(message.from_user.id)
     wait_msg = await message.answer("O'ylayapman...")
     try:
-        answer_text = await ask_gemini_text(message.text.strip())
+        answer_text = await ask_groq_with_fallback(message.text.strip())
         try:
             await wait_msg.delete()
         except Exception:
             pass
-        await send_markdown_message(message, answer_text)
+        await send_safe_message(message, answer_text)
     except Exception as e:
-        logging.error(f"Gemini matn xatoligi: {e}")
+        logging.error(f"Xatolik: {e}")
         try:
             await wait_msg.delete()
         except Exception:

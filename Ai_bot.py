@@ -94,7 +94,7 @@ async def ask_groq_vision_with_fallback(image_bytes, prompt_text):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="meta-llama/llama-3.2-11b-vision-instruct",  # Vision qo'llab-quvvatlaydigan tezkor model
+                model="qwen/qwen3.6-27b",  # Tasdiqlangan va joriy ishlaydigan vision model
                 messages=[
                     {
                         "role": "system",
@@ -182,7 +182,6 @@ async def photo_handler(message: types.Message):
         
         prompt = "Mana bu rasmda kitob sahifasidagi misollar va masalalar berilgan. Iltimos, ularni o'qing va har birining aniqlanish sohalarini hamda yechimlarini chiroyli kod bloki ichida batafsil yozib bering."
         
-        # Endi tashqi OCR emas, to'g'ridan-to'g'ri Vision AI ga yuboramiz
         answer_text = await ask_groq_vision_with_fallback(file_bytes, prompt)
         
         try:

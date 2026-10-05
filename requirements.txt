@@ -1,4 +1,4 @@
 aiogram
 groq
 aiohttp
-Pillow
+google-genai

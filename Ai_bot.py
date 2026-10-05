@@ -4,6 +4,7 @@ import os
 import http.server
 import socketserver
 import threading
+import base64
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from groq import Groq
@@ -44,9 +45,10 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
+# Matnli xabarlar uchun Groq funksiyasi
 async def ask_groq_with_fallback(prompt_text):
     last_error = None
-    for i, api_key in enumerate(API_KEYS):
+    for api_key in API_KEYS:
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
@@ -81,6 +83,42 @@ async def ask_groq_with_fallback(prompt_text):
             
     raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
 
+# Rasmlar uchun Groq Vision funksiyasi
+async def ask_groq_vision_with_fallback(image_url, prompt_text):
+    last_error = None
+    vision_models = ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"]
+    for api_key in API_KEYS:
+        try:
+            client = Groq(api_key=api_key)
+            for model in vision_models:
+                try:
+                    completion = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "Sening isming 'Sardorbek AI'. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. Rasmlarni diqqat bilan tahlil qilib, o'zbek tilida aniq va batafsil javob ber."
+                            },
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt_text},
+                                    {"type": "image_url", "image_url": {"url": image_url}}
+                                ]
+                            }
+                        ],
+                        temperature=0.7,
+                    )
+                    answer = completion.choices[0].message.content
+                    if answer:
+                        return answer
+                except Exception:
+                    continue
+        except Exception as e:
+            last_error = e
+            continue
+    raise last_error or Exception("Rasm uchun mos keladigan API kalit topilmadi yoki limit tugagan.")
+
 async def send_long_message(message: types.Message, text: str):
     max_length = 4000
     lines = text.split('\n')
@@ -114,10 +152,9 @@ async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga istalgan matnli savol yoki dasturlash kodi yuboring, yechib beraman."
+        "Menga istalgan matnli savol, kod yoki **rasm** yuborishingiz mumkin, tahlil qilib yechib beraman."
     )
 
-# Statistika buyrug'i (/stats)
 @dp.message(Command("stats"))
 async def stats_handler(message: types.Message):
     try:
@@ -125,7 +162,7 @@ async def stats_handler(message: types.Message):
             with open("users.txt", "r") as f:
                 users = f.read().splitlines()
             total_users = len(users)
-            users_list = "\n".join(users[-20:]) # Oxirgi 20 ta foydalanuvchi ID raqami
+            users_list = "\n".join(users[-20:])
             await message.answer(
                 f"📊 **Bot statistikasi:**\n\n"
                 f"👥 Jami foydalanuvchilar: <b>{total_users}</b> ta\n\n"
@@ -136,6 +173,36 @@ async def stats_handler(message: types.Message):
             await message.answer("📊 Hozircha foydalanuvchilar yo'q yoki fayl yaratilmadi.")
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
+
+# Rasm yuborilganda ishlaydigan qism
+@dp.message(F.photo)
+async def photo_handler(message: types.Message):
+    save_user(message.from_user.id)
+    wait_msg = await message.answer("🖼 Rasmni tahlil qilyapman...")
+    try:
+        photo = message.photo[-1]
+        file = await bot.get_file(photo.file_id)
+        file_bytes = await bot.download_file(file.file_path)
+        
+        encoded_image = base64.b64encode(file_bytes.read()).decode('utf-8')
+        image_url = f"data:image/jpeg;base64,{encoded_image}"
+        
+        caption = message.caption or "Bu rasmda nima tasvirlangan? Iltimos, tushuntirib bering."
+        
+        answer_text = await ask_groq_vision_with_fallback(image_url, caption)
+        
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
+        await send_long_message(message, answer_text)
+    except Exception as e:
+        logging.error(f"Rasm xatoligi: {e}")
+        try:
+            await wait_msg.delete()
+        except Exception:
+            pass
+        await message.answer(f"Rasm bilan ishlashda xatolik yuz berdi: {str(e)}")
 
 @dp.message(F.text & ~F.text.startswith("/"))
 async def answer_question(message: types.Message):

@@ -85,6 +85,20 @@ async def ask_groq_with_fallback(prompt_text):
             
     raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
 
+# Uzun xabarlarni bo'laklab yuborish uchun funksiya
+async def send_long_message(message: types.Message, text: str):
+    max_length = 4000
+    if len(text) <= max_length:
+        await message.answer(text, parse_mode="Markdown")
+        return
+    
+    for i in range(0, len(text), max_length):
+        chunk = text[i:i + max_length]
+        try:
+            await message.answer(chunk, parse_mode="Markdown")
+        except Exception:
+            await message.answer(chunk)
+
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
     save_user(message.from_user.id)
@@ -124,7 +138,7 @@ async def answer_question(message: types.Message):
         except Exception:
             pass
             
-        await message.answer(answer_text, parse_mode="Markdown")
+        await send_long_message(message, answer_text)
         
     except Exception as e:
         logging.error(f"Xatolik tafsiloti: {e}")
@@ -134,7 +148,7 @@ async def answer_question(message: types.Message):
             pass
         try:
             if answer_text:
-                await message.answer(answer_text)
+                await send_long_message(message, answer_text)
             else:
                 await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
         except Exception:

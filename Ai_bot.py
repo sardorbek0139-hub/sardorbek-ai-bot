@@ -152,7 +152,7 @@ async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga istalgan matnli savol, kod yoki **rasm** yuborishingiz mumkin, tahlil qilib yechib beraman."
+        "Menga istalgan matnli savol, kod yoki rasm yuborishingiz mumkin, tahlil qilib yechib beraman."
     )
 
 @dp.message(Command("stats"))

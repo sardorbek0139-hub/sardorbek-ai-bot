@@ -68,7 +68,7 @@ async def ask_groq_with_fallback(prompt_text):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",  # Hamma kalitda ishlaydigan tezkor va barqaror model
+                model="openai/gpt-oss-120b",  # Kabinetingizdagi rasmda ko'rsatilgan model
                 messages=[
                     {
                         "role": "system",

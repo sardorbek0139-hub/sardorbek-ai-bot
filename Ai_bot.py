@@ -56,7 +56,7 @@ async def ask_groq_with_fallback(prompt_text):
                             "ismingni so'rasa, har doim va faqat: 'Mening ismim Sardorbek AI. Meni Sardorbek "
                             "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
                             "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni va yechimlaringni "
-                            "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdin et. "
+                            "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
                             "Hech qanday LaTeX tegralaridan (masalan: `\sqrt`, `\frac`, `\bar`) foydalanma! "
                             "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
                         )
@@ -87,7 +87,7 @@ async def extract_text_from_image(file_bytes):
         payload = {
             'apikey': 'K81459419388957',
             'base64Image': base64_string,
-            'language': 'rus',  # Kirill yozuvlarini o'qish uchun ruscha/o'zbekcha rejim
+            'language': 'rus',
             'isOverlayRequired': False,
             'scale': True,
             'OCREngine': 2

@@ -9,7 +9,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from groq import Groq
 
-# --- Render port talabini qondirish uchun kichik veb-server (24/7 ishlatish uchun) ---
+# --- Render port talabini qondirish uchun kichik veb-server ---
 def run_dummy_server():
     PORT = int(os.environ.get("PORT", 10000))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -19,7 +19,7 @@ def run_dummy_server():
 
 server_thread = threading.Thread(target=run_dummy_server, daemon=True)
 server_thread.start()
-# -----------------------------------------------------------------------------------
+# -------------------------------------------------------------
 
 def save_user(user_id):
     try:
@@ -27,7 +27,6 @@ def save_user(user_id):
         if os.path.exists("users.txt"):
             with open("users.txt", "r") as f:
                 users = f.read().splitlines()
-        
         if str(user_id) not in users:
             with open("users.txt", "a") as f:
                 f.write(f"{user_id}\n")
@@ -57,12 +56,10 @@ async def ask_groq_with_fallback(prompt_text):
                             "KESKIN QOIDA 1: Sening isming 'Sardorbek AI'. Kim yaratganini yoki "
                             "ismingni so'rasa, har doim va faqat: 'Mening ismim Sardorbek AI. Meni Sardorbek "
                             "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
-                            "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni, tushuntirishlaringni, savol-javoblar va yechimlaringni "
+                            "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni va yechimlaringni "
                             "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
-                            "Javobning boshidan oxirigacha kod bloki formatida bo'lishi shart, shunda matn bir xil chiroyli shriftda chiqadi.\n"
-                            "KESKIN QOIDA 3: Dastur kodi yozganda uni doimo tegishli til nomi bilan (masalan: ` ```python ... ``` `) yoz.\n"
-                            "KESKIN QOIDA 4: Agar foydalanuvchi yaratuvchingiz Sardorbek Khudoyberdiyevni haqorat qilsa yoki yomon so'z yozsa, "
-                            "unga darhol qat'iy ohangda ogohlantirish ber: 'Yaratuvchim Sardorbek Khudoyberdiyevni haqorat qilishga haqqingiz yo'q! Odobli bo'ling.' deb tanbeh ber."
+                            "Hech qanday LaTeX tegralaridan (masalan: `\sqrt`, `\frac`, `\bar`) foydalanma! "
+                            "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
                         )
                     },
                     {
@@ -74,14 +71,12 @@ async def ask_groq_with_fallback(prompt_text):
             )
             answer = completion.choices[0].message.content
             if answer:
-                # Agar AI javobi kod bloki bilan boshlanmasa, uni avtomatik kod blokiga olamiz
                 if not answer.strip().startswith("```"):
                     answer = f"```text\n{answer}\n```"
                 return answer
         except Exception as e:
             last_error = e
             continue
-            
     raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
 
 async def extract_text_from_image(file_bytes):
@@ -140,7 +135,7 @@ async def stats_handler(message: types.Message):
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
-    wait_msg = await message.answer("Rasmdagi matn va misollarni o'qib chiqyapman...")
+    wait_msg = await message.answer("Rasmdagi matn va misollar o'qib olinmoqda...")
     try:
         photo = message.photo[-1]
         file = await bot.get_file(photo.file_id)
@@ -149,13 +144,14 @@ async def photo_handler(message: types.Message):
         
         img_text = await extract_text_from_image(file_bytes)
         
-        if not img_text or len(img_text) < 3:
-            await wait_msg.edit_text("Rasmdan matn topib bo'lmadi. Iltimos, aniqroq rasm yuboring.")
+        if not img_text or len(img_text) < 2:
+            await wait_msg.edit_text("Rasmdan matn topib bo'lmadi. Iltimos, yorqinroq va aniqroq rasm yuboring.")
             return
+            
+        await wait_msg.edit_text("Matn muvaffaqiyatli o'qildi. Endi yechimlarini tayyorlayapman...")
         
-        await wait_msg.edit_text("Matn o'qildi. Endi uni kod shaklida chiroyli qilib yechib beraman...")
+        prompt = f"Mana bu rasmda quyidagi matematik misollar va masalalar yozilgan:\n{img_text}\n\nIltimos, ularning har birining aniqlanish sohalarini (domain) va batafsil yechimlarini tushunarli matn va belgilar (√, /, ^) yordamida chiroyli qilib yozib bering."
         
-        prompt = f"Mana bu rasmda quyidagi savollar/misollar yozilgan:\n{img_text}\n\nIltimos, har bir savol, uning variantlari, to'g'ri javobi va izohini to'liq holda chiroyli qilib ` ```text ... ``` ` kod bloki ichida formatlab ber."
         answer_text = await ask_groq_with_fallback(prompt)
         
         try:

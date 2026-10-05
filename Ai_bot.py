@@ -34,11 +34,11 @@ def save_user(user_id):
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# Matn uchun Groq kalitlari (Render Environment variables dan o'qiydi)
+# Matn uchun Groq kalitlari
 API_KEYS_ENV = os.getenv("API_KEYS", "")
 API_KEYS = [k.strip() for k in API_KEYS_ENV.split(",") if k.strip()]
 
-# Rasm uchun Gemini kalitlari (Render Environment variables dan o'qiydi)
+# Rasm uchun Gemini kalitlari
 GEMINI_KEYS_ENV = os.getenv("GEMINI_API_KEYS", "")
 GEMINI_KEYS = [k.strip() for k in GEMINI_KEYS_ENV.split(",") if k.strip()]
 
@@ -64,7 +64,7 @@ async def ask_groq(prompt_text):
                             "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
                             "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni va yechimlaringni "
                             "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
-                            "Hech qanday LaTeX tegralaridan (masalan: `\sqrt`, `\frac`, `\bar`) foydalanma! "
+                            "Hech qanday LaTeX tegralaridan (masalan: `\\sqrt`, `\\frac`, `\\bar`) foydalanma! "
                             "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
                         )
                     },
@@ -85,7 +85,7 @@ async def ask_groq(prompt_text):
             continue
     raise last_error or Exception("Groq kalitlari ishlamadi.")
 
-# 2. RASM UCHUN GEMINI FUNKSIYASI (Fallback bilan)
+# 2. RASM UCHUN GEMINI FUNKSIYASI (Faqat Gemini 2.5 ishlatiladi, Groq aralashmaydi)
 async def ask_gemini_vision(prompt_text, image_bytes):
     if not GEMINI_KEYS:
         raise Exception("GEMINI_API_KEYS topilmadi! Render environment variables ga qo'shing.")
@@ -99,7 +99,7 @@ async def ask_gemini_vision(prompt_text, image_bytes):
                 "Sening isming 'Sardorbek AI'. Kim yaratganini yoki ismingni so'rasa, har doim va faqat: "
                 "'Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan' deb javob ber. "
                 "Barcha javoblaringni va yechimlaringni to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
-                "Hech qanday LaTeX tegralaridan (masalan: `\sqrt`, `\frac`, `\bar`) foydalanma! "
+                "Hech qanday LaTeX tegralaridan foydalanma! "
                 "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
             )
             

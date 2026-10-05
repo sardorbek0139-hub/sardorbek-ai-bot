@@ -4,7 +4,7 @@ import os
 import http.server
 import socketserver
 import threading
-import aiohttp
+import base64
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from groq import Groq
@@ -43,6 +43,7 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
+# Matnli so'rovlar uchun Groq funksiyasi
 async def ask_groq_with_fallback(prompt_text):
     last_error = None
     for api_key in API_KEYS:
@@ -75,7 +76,6 @@ async def ask_groq_with_fallback(prompt_text):
             )
             answer = completion.choices[0].message.content
             if answer:
-                # Agar AI javobi kod bloki bilan boshlanmasa, uni majburiy ravishda kod blokiga olamiz
                 if not answer.strip().startswith("```"):
                     answer = f"```text\n{answer}\n```"
                 return answer
@@ -85,23 +85,55 @@ async def ask_groq_with_fallback(prompt_text):
             
     raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
 
-async def extract_text_from_image(file_bytes):
-    try:
-        url = "[https://api.ocr.space/parse/image](https://api.ocr.space/parse/image)"
-        async with aiohttp.ClientSession() as session:
-            form = aiohttp.FormData()
-            form.add_field('apikey', 'K81459419388957')
-            form.add_field('file', file_bytes, filename='image.jpg', content_type='image/jpeg')
-            form.add_field('language', 'eng')
+# Rasmni to'g'ridan-to'g'ri tahlil qilish uchun Vision Groq funksiyasi
+async def ask_groq_vision_with_fallback(image_bytes, prompt_text):
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    last_error = None
+    
+    for api_key in API_KEYS:
+        try:
+            client = Groq(api_key=api_key)
+            completion = client.chat.completions.create(
+                model="meta-llama/llama-3.2-11b-vision-instruct",  # Vision qo'llab-quvvatlaydigan tezkor model
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Siz kuchli matematik yordamchisiz. Rasmda keltirilgan barcha misol va masalalarni o'qing, "
+                            "ularning aniqlanish sohalarini (domain) va to'liq yechimlarini batafsil tushuntirib bering. "
+                            "Javobni FAQAT VA FAQAT bitta ` ```text ... ``` ` kod bloki ichida yozing. "
+                            "LaTeX tegralaridan foydalanmang, oddiy tushunarli matn va belgilardan (`√`, `/`, `^`, `≥`, `≤`) foydalaning."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": prompt_text
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=2048,
+            )
+            answer = completion.choices[0].message.content
+            if answer:
+                if not answer.strip().startswith("```"):
+                    answer = f"```text\n{answer}\n```"
+                return answer
+        except Exception as e:
+            last_error = e
+            continue
             
-            async with session.post(url, data=form) as response:
-                result = await response.json()
-                if result.get("ParsedResults"):
-                    extracted_text = result["ParsedResults"][0].get("ParsedText", "")
-                    return extracted_text.strip()
-    except Exception as e:
-        print(f"OCR xatoligi: {e}")
-    return ""
+    raise last_error or Exception("Vision modellari ishlamadi yoki limit tugadi.")
 
 async def send_markdown_message(message: types.Message, text: str):
     max_length = 4000
@@ -117,7 +149,7 @@ async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga istalgan matnli savol, kod yoki rasm yuborishingiz mumkin (rasmdagi misollarni avtomatik o'qib yechib beraman)."
+        "Menga istalgan matnli savol, kod yoki rasm yuborishingiz mumkin (rasmdagi misollarni o'zim to'g'ridan-to'g'ri o'qib yechib beraman)."
     )
 
 @dp.message(Command("stats"))
@@ -141,23 +173,17 @@ async def stats_handler(message: types.Message):
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
-    wait_msg = await message.answer("Rasmdagi matn va misollarni o'qib chiqyapman...")
+    wait_msg = await message.answer("Rasm tahlil qilinmoqda, iltimos kuting...")
     try:
         photo = message.photo[-1]
         file = await bot.get_file(photo.file_id)
         file_bytes_io = await bot.download_file(file.file_path)
         file_bytes = file_bytes_io.read()
         
-        img_text = await extract_text_from_image(file_bytes)
+        prompt = "Mana bu rasmda kitob sahifasidagi misollar va masalalar berilgan. Iltimos, ularni o'qing va har birining aniqlanish sohalarini hamda yechimlarini chiroyli kod bloki ichida batafsil yozib bering."
         
-        if not img_text or len(img_text) < 3:
-            await wait_msg.edit_text("Rasmdan matn topib bo'lmadi. Iltimos, aniqroq rasm yuboring.")
-            return
-        
-        await wait_msg.edit_text("Matn o'qildi. Endi chiroyli kod shaklida yechib beraman...")
-        
-        prompt = f"Mana bu rasmda quyidagi misollar yozilgan:\n{img_text}\n\nIltimos, har bir misolning yechimini LaTeX belgilarisiz, to'liq holda ` ```text ... ``` ` kod bloki ichida juda chiroyli va tushunarli qilib formatlab ber."
-        answer_text = await ask_groq_with_fallback(prompt)
+        # Endi tashqi OCR emas, to'g'ridan-to'g'ri Vision AI ga yuboramiz
+        answer_text = await ask_groq_vision_with_fallback(file_bytes, prompt)
         
         try:
             await wait_msg.delete()

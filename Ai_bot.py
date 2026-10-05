@@ -1,3 +1,20 @@
+import sys
+import subprocess
+
+# Kutubxonalarni to'g'ri tekshirish va avtomatik o'rnatish
+packages = [
+    ("aiogram", "aiogram"),
+    ("groq", "groq"),
+    ("aiohttp", "aiohttp"),
+    ("google-genai", "google.genai")
+]
+
+for pkg, mod in packages:
+    try:
+        __import__(mod)
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", pkg])
+
 import asyncio
 import logging
 import os
@@ -85,7 +102,7 @@ async def ask_groq(prompt_text):
             continue
     raise last_error or Exception("Groq kalitlari ishlamadi.")
 
-# 2. RASM UCHUN GEMINI FUNKSIYASI (Faqat Gemini 2.5 ishlatiladi, Groq aralashmaydi)
+# 2. RASM UCHUN GEMINI FUNKSIYASI
 async def ask_gemini_vision(prompt_text, image_bytes):
     if not GEMINI_KEYS:
         raise Exception("GEMINI_API_KEYS topilmadi! Render environment variables ga qo'shing.")
@@ -162,7 +179,6 @@ async def stats_handler(message: types.Message):
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
-# Rasmlar uchun handler (Faqat GEMINI ishlaydi)
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
@@ -191,7 +207,6 @@ async def photo_handler(message: types.Message):
             pass
         await message.answer(f"Xatolik yuz berdi: {str(e)}")
 
-# Matnlar uchun handler (Faqat GROQ ishlaydi)
 @dp.message(F.text & ~F.text.startswith("/"))
 async def answer_question(message: types.Message):
     save_user(message.from_user.id)

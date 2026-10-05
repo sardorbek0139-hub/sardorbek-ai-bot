@@ -23,13 +23,11 @@ server_thread.start()
 # Foydalanuvchilarni users.txt fayliga saqlash funksiyasi
 def save_user(user_id):
     try:
-        if not os.path.exists("users.txt"):
-            with open("users.txt", "w") as f:
-                f.write("")
+        users = []
+        if os.path.exists("users.txt"):
+            with open("users.txt", "r") as f:
+                users = f.read().splitlines()
         
-        with open("users.txt", "r") as f:
-            users = f.read().splitlines()
-            
         if str(user_id) not in users:
             with open("users.txt", "a") as f:
                 f.write(f"{user_id}\n")
@@ -113,15 +111,35 @@ async def send_long_message(message: types.Message, text: str):
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    save_user(message.from_user.id) # Foydalanuvchini saqlaymiz
+    save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
         "Menga istalgan matnli savol yoki dasturlash kodi yuboring, yechib beraman."
     )
 
+# Statistika buyrug'i (/stats)
+@dp.message(Command("stats"))
+async def stats_handler(message: types.Message):
+    try:
+        if os.path.exists("users.txt"):
+            with open("users.txt", "r") as f:
+                users = f.read().splitlines()
+            total_users = len(users)
+            users_list = "\n".join(users[-20:]) # Oxirgi 20 ta foydalanuvchi ID raqami
+            await message.answer(
+                f"📊 **Bot statistikasi:**\n\n"
+                f"👥 Jami foydalanuvchilar: <b>{total_users}</b> ta\n\n"
+                f"Oxirgi foydalanuvchi ID lari:\n<code>{users_list}</code>",
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer("📊 Hozircha foydalanuvchilar yo'q yoki fayl yaratilmadi.")
+    except Exception as e:
+        await message.answer(f"Xatolik: {e}")
+
 @dp.message(F.text & ~F.text.startswith("/"))
 async def answer_question(message: types.Message):
-    save_user(message.from_user.id) # Foydalanuvchini saqlaymiz
+    save_user(message.from_user.id)
     wait_msg = await message.answer("⏳ O'ylayapman...")
     try:
         answer_text = await ask_groq_with_fallback(message.text.strip())

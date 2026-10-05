@@ -60,12 +60,15 @@ async def extract_text_from_image(file_bytes):
         return ""
 
 async def ask_groq_with_fallback(prompt_text):
+    if not API_KEYS:
+        raise Exception("Groq API kalitlari topilmadi!")
+    
     last_error = None
     for api_key in API_KEYS:
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {
                         "role": "system",

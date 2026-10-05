@@ -5,9 +5,7 @@ import http.server
 import socketserver
 import threading
 import base64
-import io
 import aiohttp
-from PIL import Image
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from groq import Groq
@@ -82,18 +80,7 @@ async def ask_groq_with_fallback(prompt_text):
 
 async def extract_text_from_image(file_bytes):
     try:
-        # Rasmni ochib, hajmini optimallashtiramiz (API xatolarining oldini olish uchun)
-        image = Image.open(io.BytesIO(file_bytes))
-        image = image.convert("RGB")
-        
-        # Agar rasm juda katta bo'lsa, o'lchamini kichraytiramiz
-        image.thumbnail((1200, 1200))
-        
-        buffered = io.BytesIO()
-        image.save(buffered, format="JPEG", quality=85)
-        resized_bytes = buffered.getvalue()
-        
-        base64_image = base64.b64encode(resized_bytes).decode('utf-8')
+        base64_image = base64.b64encode(file_bytes).decode('utf-8')
         base64_string = f"data:image/jpeg;base64,{base64_image}"
         
         url = "[https://api.ocr.space/parse/image](https://api.ocr.space/parse/image)"

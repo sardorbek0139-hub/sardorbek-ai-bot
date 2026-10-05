@@ -20,6 +20,22 @@ server_thread = threading.Thread(target=run_dummy_server, daemon=True)
 server_thread.start()
 # -----------------------------------------------------------------------------------
 
+# Foydalanuvchilarni users.txt fayliga saqlash funksiyasi
+def save_user(user_id):
+    try:
+        if not os.path.exists("users.txt"):
+            with open("users.txt", "w") as f:
+                f.write("")
+        
+        with open("users.txt", "r") as f:
+            users = f.read().splitlines()
+            
+        if str(user_id) not in users:
+            with open("users.txt", "a") as f:
+                f.write(f"{user_id}\n")
+    except Exception as e:
+        print(f"Foydalanuvchini saqlashda xatolik: {e}")
+
 # Token va kalitlarni serverning o'zidan o'qiymiz
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 API_KEYS_ENV = os.getenv("API_KEYS", "")
@@ -97,6 +113,7 @@ async def send_long_message(message: types.Message, text: str):
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
+    save_user(message.from_user.id) # Foydalanuvchini saqlaymiz
     await message.answer(
         "Assalomu alaykum! Mening ismim Sardorbek AI. Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
         "Menga istalgan matnli savol yoki dasturlash kodi yuboring, yechib beraman."
@@ -104,6 +121,7 @@ async def start_handler(message: types.Message):
 
 @dp.message(F.text & ~F.text.startswith("/"))
 async def answer_question(message: types.Message):
+    save_user(message.from_user.id) # Foydalanuvchini saqlaymiz
     wait_msg = await message.answer("⏳ O'ylayapman...")
     try:
         answer_text = await ask_groq_with_fallback(message.text.strip())

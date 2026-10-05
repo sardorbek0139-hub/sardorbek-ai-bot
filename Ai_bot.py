@@ -6,7 +6,6 @@ import socketserver
 import threading
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from groq import Groq
 from google import genai
 from google.genai import types as genai_types
 
@@ -34,11 +33,7 @@ def save_user(user_id):
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# Matn uchun Groq kalitlari
-API_KEYS_ENV = os.getenv("API_KEYS", "")
-API_KEYS = [k.strip() for k in API_KEYS_ENV.split(",") if k.strip()]
-
-# Rasm uchun Gemini kalitlari
+# Hamma narsa uchun Gemini kalitlaridan foydalanamiz
 GEMINI_KEYS_ENV = os.getenv("GEMINI_API_KEYS", "")
 GEMINI_KEYS = [k.strip() for k in GEMINI_KEYS_ENV.split(",") if k.strip()]
 
@@ -47,35 +42,34 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# 1. MATN UCHUN GROQ FUNKSIYASI
-async def ask_groq(prompt_text):
+# MATN UCHUN GEMINI FUNKSIYASI
+async def ask_gemini_text(prompt_text):
+    if not GEMINI_KEYS:
+        raise Exception("GEMINI_API_KEYS topilmadi! Render environment variables ga qo'shing.")
+    
     last_error = None
-    for api_key in API_KEYS:
+    for gemini_key in GEMINI_KEYS:
         try:
-            client = Groq(api_key=api_key)
-            completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "KESKIN QOIDA 1: Sening isming 'Sardorbek AI'. Kim yaratganini yoki "
-                            "ismingni so'rasa, har doim va faqat: 'Mening ismim Sardorbek AI. Meni Sardorbek "
-                            "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
-                            "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni va yechimlaringni "
-                            "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
-                            "Hech qanday LaTeX tegralaridan foydalanma! "
-                            "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt_text
-                    }
-                ],
-                temperature=0.7,
+            client = genai.Client(api_key=gemini_key)
+            
+            system_instruction = (
+                "KESKIN QOIDA 1: Sening isming 'Sardorbek AI'. Kim yaratganini yoki "
+                "ismingni so'rasa, har doim va faqat: 'Mening ismim Sardorbek AI. Meni Sardorbek "
+                "Khudoyberdiyev Dasturchi yaratgan' deb javob ber. Aslo ChatGPT, OpenAI, Google yoki Gemini dema.\n"
+                "KESKIN QOIDA 2 (MUHIM): Barcha javoblaringni va yechimlaringni "
+                "to'liqligicha bir yoki bir nechta ` ```text ... ``` ` kod bloki ichida taqdim et. "
+                "Hech qanday LaTeX tegralaridan foydalanma! "
+                "Barcha matematik formulalarni oddiy tushunarli matn va belgilar shaklida yoz (masalan: ildiz uchun `√`, bo'lish uchun `/`, daraja uchun `^`, katta yoki teng `≥`)."
             )
-            answer = completion.choices[0].message.content
+            
+            full_prompt = f"{system_instruction}\n\nFoydalanuvchi savoli: {prompt_text}"
+            
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=full_prompt
+            )
+            
+            answer = response.text
             if answer:
                 if not answer.strip().startswith("```"):
                     answer = f"```text\n{answer}\n```"
@@ -83,9 +77,9 @@ async def ask_groq(prompt_text):
         except Exception as e:
             last_error = e
             continue
-    raise last_error or Exception("Groq kalitlari ishlamadi.")
+    raise last_error or Exception("Barcha Gemini kalitlari limiti tugadi yoki ishlamadi.")
 
-# 2. RASM UCHUN GEMINI FUNKSIYASI
+# RASM UCHUN GEMINI FUNKSIYASI
 async def ask_gemini_vision(prompt_text, image_bytes):
     if not GEMINI_KEYS:
         raise Exception("GEMINI_API_KEYS topilmadi! Render environment variables ga qo'shing.")
@@ -195,14 +189,14 @@ async def answer_question(message: types.Message):
     save_user(message.from_user.id)
     wait_msg = await message.answer("O'ylayapman...")
     try:
-        answer_text = await ask_groq(message.text.strip())
+        answer_text = await ask_gemini_text(message.text.strip())
         try:
             await wait_msg.delete()
         except Exception:
             pass
         await send_markdown_message(message, answer_text)
     except Exception as e:
-        logging.error(f"Groq xatoligi: {e}")
+        logging.error(f"Gemini matn xatoligi: {e}")
         try:
             await wait_msg.delete()
         except Exception:

@@ -7,9 +7,8 @@ import threading
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from groq import Groq
-import base64
 
-# Render uchun dummy server
+# Render uchun dummy server (port band bo'lib qolmasligi uchun)
 def run_dummy_server():
     PORT = int(os.environ.get("PORT", 10000))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -20,6 +19,7 @@ def run_dummy_server():
 server_thread = threading.Thread(target=run_dummy_server, daemon=True)
 server_thread.start()
 
+# Foydalanuvchilarni saqlash uchun funksiya
 def save_user(user_id):
     try:
         users = []
@@ -32,10 +32,12 @@ def save_user(user_id):
     except Exception as e:
         print(f"Foydalanuvchini saqlashda xatolik: {e}")
 
-TELEGRAM_TOKEN = "8605848716:AAEJO1uLAjZ0O9VNBSxhACBvqMarVPMTPWw"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8605848716:AAEJO1uLAjZ0O9VNBSxhACBvqMarVPMTPWw")
+
 API_KEYS = [
     "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",
-    "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"
+    "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",
+    "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"
 ]
 
 bot = Bot(token=TELEGRAM_TOKEN)
@@ -43,45 +45,6 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# Rasmdan matn o'qish (Vision model) - xatoliklarni aniq ko'rsatish uchun yangilandi
-async def extract_text_from_image(image_bytes):
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
-    for i, api_key in enumerate(API_KEYS):
-        if not api_key:
-            continue
-        try:
-            client = Groq(api_key=api_key)
-            completion = client.chat.completions.create(
-                model="llama-3.2-11b-vision-preview",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text", 
-                                "text": "Bu rasmda matematik darslik sahifasi yoki misollar bor. Rasmdagi barcha matnlar, formulalar va misollarni aynan qanday yozilgan bo'lsa shunday matn (text) ko'rinishiga o'tkazib ber. Faqat matn va misollarni aniq ko'chirib ber."
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                temperature=0.1,
-                max_tokens=1024
-            )
-            extracted_text = completion.choices[0].message.content
-            if extracted_text:
-                return extracted_text.strip()
-        except Exception as e:
-            print(f"Vision xatoligi ({i+1}-kalit): {e}")
-            continue
-    return ""
-
-# Matnni yechish uchun Groq text modeli
 async def ask_groq_with_fallback(prompt_text):
     last_error = None
     for i, api_key in enumerate(API_KEYS):
@@ -90,7 +53,7 @@ async def ask_groq_with_fallback(prompt_text):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",  # Ishlayotgan to'g'ri model nomi
                 messages=[
                     {
                         "role": "system",
@@ -108,8 +71,10 @@ async def ask_groq_with_fallback(prompt_text):
                 return answer
         except Exception as e:
             last_error = e
-            print(f"Text model xatoligi ({i+1}-kalit): {e}")
+            print(f"Diqqat! {i+1}-kalit xato berdi: {e}")
+            logging.warning(f"{i+1}-kalit xato berdi: {e}")
             continue
+            
     raise last_error or Exception("Barcha kalitlar limiti tugadi yoki ishlamadi.")
 
 @dp.message(Command("start"))
@@ -117,7 +82,7 @@ async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga istalgan darslik yoki misol tushirilgan rasm yuboring: bot uni o'qib yechib beradi!"
+        "Menga istalgan matnli savol yoki dasturlash kodi yuboring, yechib beraman."
     )
 
 @dp.message(Command("stats"))
@@ -138,28 +103,12 @@ async def stats_handler(message: types.Message):
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
-@dp.message(F.photo)
-async def photo_handler(message: types.Message):
+@dp.message(F.text & ~F.text.startswith("/"))
+async def answer_question(message: types.Message):
     save_user(message.from_user.id)
-    wait_msg = await message.answer("🔍 Rasm tahlil qilinmoqda, biroz kuting...")
+    wait_msg = await message.answer("⏳ O'ylayapman...")
     try:
-        photo = message.photo[-1]
-        file = await bot.get_file(photo.file_id)
-        file_bytes_io = await bot.download_file(file.file_path)
-        file_bytes = file_bytes_io.read()
-        
-        # 1-Bosqich: Rasmdan matn hosil qilish
-        extracted_text = await extract_text_from_image(file_bytes)
-        
-        if not extracted_text or len(extracted_text) < 3:
-            await wait_msg.edit_text("❌ Rasmdan matn o'qib bo'lmadi. Iltimos, yorqinroq va aniqroq rasm yuboring.")
-            return
-        
-        await wait_msg.edit_text(f"📝 **Topilgan matn:**\n`{extracted_text}`\n\n⏳ Endi buni yechib beraman...")
-        
-        # 2-Bosqich: Matnni Groq'ga berib yechim olish
-        prompt = f"Quyida kitobdan olingan matn va misollar keltirilgan:\n\n{extracted_text}\n\nIltimos, mana shu misollarning yechimini batafsil va tushunarli qilib yozib ber."
-        answer_text = await ask_groq_with_fallback(prompt)
+        answer_text = await ask_groq_with_fallback(message.text.strip())
         
         try:
             await wait_msg.delete()
@@ -167,27 +116,9 @@ async def photo_handler(message: types.Message):
             pass
             
         await message.answer(answer_text)
+        
     except Exception as e:
-        logging.error(f"Rasm xatoligi tafsiloti: {e}")
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
-        await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
-
-@dp.message(F.text & ~F.text.startswith("/"))
-async def answer_question(message: types.Message):
-    save_user(message.from_user.id)
-    wait_msg = await message.answer("⏳ O'ylayapman...")
-    try:
-        answer_text = await ask_groq_with_fallback(message.text.strip())
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
-        await message.answer(answer_text)
-    except Exception as e:
-        logging.error(f"Xatolik: {e}")
+        logging.error(f"Xatolik tafsiloti: {e}")
         try:
             await wait_msg.delete()
         except Exception:

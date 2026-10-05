@@ -68,7 +68,7 @@ async def ask_groq_with_fallback(prompt_text):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="llama3-70b-8192",  # Ishlaydigan barqaror modelga o'zgartirildi
+                model="llama-3.3-70b-versatile",  # Hozirgi ishlaydigan to'g'ri model
                 messages=[
                     {
                         "role": "system",

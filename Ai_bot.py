@@ -3,11 +3,13 @@ import logging
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from groq import Groq
 
 # ---------------- CONFIGURATION ----------------
-TOKEN = os.getenv("TELEGRAM_TOKEN", "SIZNING_HAQIQIY_BOT_TOKENINGIZ")
-GROQ_API_KEY = os.getenv("API_KEYS", "SIZNING_HAQIQIY_GROQ_API_KEY")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+GROQ_API_KEY = os.getenv("API_KEYS")
 ADMIN_ID = 123456789  # O'zingizning Telegram ID raqamingiz
 
 ADMIN_USERNAME_LINK = "https://t.me/@Sardorbek_Ai_admin"
@@ -16,7 +18,8 @@ BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 user_memory = {}
 vip_users = set()
 
-bot = Bot(token=TOKEN)
+# Python 3.14 va aiogram mosligi uchun yangi xavfsiz bot obyekti
+bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
 groq_client = Groq(api_key=GROQ_API_KEY)
 
@@ -34,8 +37,7 @@ async def start_command(message: types.Message):
     user_memory[user_id].clear()
     
     await message.answer(
-        f"Assalomu alaykum! Meni {BOT_IDENTITY} yaratgan. Menga matnli savol yoki dasturlash kodi yuboring, javob beraman.",
-        parse_mode="Markdown"
+        f"Assalomu alaykum! Meni {BOT_IDENTITY} yaratgan. Menga matnli savol yoki dasturlash kodi yuboring, javob beraman."
     )
 
 # ---------------- IMAGE COMMAND & VIP CHECK ----------------
@@ -49,8 +51,7 @@ async def image_command(message: types.Message):
         ])
         await message.answer(
             "⚠️ **Rasm yaratish funksiyasi faqat VIP foydalanuvchilar uchun!**",
-            reply_markup=keyboard,
-            parse_mode="Markdown"
+            reply_markup=keyboard
         )
         return
 
@@ -90,13 +91,12 @@ async def text_handler(message: types.Message):
         
         reply_text = completion.choices[0].message.content.strip()
         
-        # ChatGPT yoki OpenAI nomlarini qat'iy filtrlab, Sardorbek AI ga almashtiramiz
         for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
             reply_text = reply_text.replace(forbidden_word, "Sardorbek AI")
 
         user_memory[user_id].append({"role": "assistant", "content": reply_text})
         
-        await message.answer(reply_text, parse_mode="Markdown")
+        await message.answer(reply_text)
         
     except Exception as e:
         logging.error(f"Xatolik yuz berdi: {e}")

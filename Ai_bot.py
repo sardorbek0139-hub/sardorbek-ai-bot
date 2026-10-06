@@ -34,12 +34,15 @@ def save_user(user_id):
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8605848716:AAEJO1uLAjZ0O9VNBSxhACBvqMarVPMTPWw")
 
-# Gemini API kalitlari (Rasmlar uchun)
-gemini_env = os.getenv("GEMINI_API_KEYS", "")
-GEMINI_API_KEYS = [k.strip() for k in gemini_env.split(",") if k.strip()]
+# ==========================================
+# GEMINI API KALITINI SHU YERGA YOZING:
+# ==========================================
+GEMINI_API_KEYS = [
+    "AIzaSySizningGeminiKalitingizShuYergaYoziladi"  # <-- Shu yerdagi matnni o'zingizning haqiqiy Gemini kalitingizga almashtiring
+]
 
-# Groq API kalitlari (Matnli xabarlar uchun)
-groq_env = os.getenv("API_KEYS", "") # Render'dagi Groq kalitlari nomi
+# Groq API kalitlari (Render'dagi API_KEYS o'zgaruvchisidan o'qiydi)
+groq_env = os.getenv("API_KEYS", "") 
 GROQ_API_KEYS = [k.strip() for k in groq_env.split(",") if k.strip()]
 
 bot = Bot(token=TELEGRAM_TOKEN)
@@ -47,7 +50,7 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# Umumiy qoidalar (Sardorbek va LaTeX taqiqlash)
+# Umumiy qoidalar
 SYSTEM_INSTRUCTION = (
     "Seni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
     "Kim yaratganini so'rasa har doim va faqat shuni ayt. "
@@ -66,7 +69,7 @@ async def ask_groq_with_fallback(prompt_text):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile", # Matn uchun eng kuchli va tez Groq modeli
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {
                         "role": "system",

@@ -6,7 +6,6 @@ import socketserver
 import threading
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-import google.generativeai as genai
 from groq import Groq
 
 # Render uchun dummy server
@@ -34,11 +33,6 @@ def save_user(user_id):
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8605848716:AAEJO1uLAjZ0O9VNBSxhACBvqMarVPMTPWw")
 
-# Gemini API kalitingiz (Rasmlar uchun)
-GEMINI_API_KEYS = [
-    "AIzaSySizningGeminiKalitingizShuYergaYoziladi"  # <-- O'zingizning haqiqiy Gemini kalitingizni yozing
-]
-
 # Groq API kalitlari (Matnli xabarlar uchun Render'dan o'qiydi)
 groq_env = os.getenv("API_KEYS", "") 
 GROQ_API_KEYS = [k.strip() for k in groq_env.split(",") if k.strip()]
@@ -48,7 +42,7 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# Yangilangan qoidalar (Formulalar va kodlar blok ichida chiqishi uchun)
+# Qoidalar
 SYSTEM_INSTRUCTION = (
     "Seni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
     "Kim yaratganini so'rasa har doim va faqat shuni ayt. "
@@ -57,7 +51,7 @@ SYSTEM_INSTRUCTION = (
     "Oddiy matn ko'rinishida yozma."
 )
 
-# 1. Matnlar uchun Groq funksiyasi
+# Matnlar uchun Groq funksiyasi
 async def ask_groq_with_fallback(prompt_text):
     if not GROQ_API_KEYS:
         raise Exception("Groq API_KEYS topilmadi!")
@@ -89,37 +83,6 @@ async def ask_groq_with_fallback(prompt_text):
             
     raise last_error or Exception("Barcha Groq kalitlar limiti tugadi yoki ishlamadi.")
 
-# 2. Rasmlar uchun Gemini funksiyasi
-async def ask_gemini_with_fallback(prompt_text, image_parts=None):
-    if not GEMINI_API_KEYS:
-        raise Exception("GEMINI_API_KEYS topilmadi!")
-        
-    last_error = None
-    for i, api_key in enumerate(GEMINI_API_KEYS):
-        try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(
-                model_name='gemini-1.5-flash',
-                system_instruction=SYSTEM_INSTRUCTION
-            )
-            
-            content_list = []
-            if image_parts:
-                content_list.append(image_parts)
-            
-            full_prompt = prompt_text if prompt_text else "Bu rasmdagi matnni, testni yoki matematik masalani o'qib, tushuntirib va to'liq yechib ber."
-            content_list.append(full_prompt)
-            
-            response = model.generate_content(content_list)
-            if response and response.text:
-                return response.text
-        except Exception as e:
-            last_error = e
-            logging.error(f"Gemini {i+1}-kalit xatosi: {e}")
-            continue
-            
-    raise last_error or Exception("Barcha Gemini kalitlar limiti tugadi yoki ishlamadi.")
-
 async def send_long_message(message: types.Message, text: str):
     max_length = 4000
     if len(text) <= max_length:
@@ -138,7 +101,7 @@ async def start_handler(message: types.Message):
     save_user(message.from_user.id)
     await message.answer(
         "Assalomu alaykum! Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga matnli savol, dasturlash kodi yoki rasm yuboring, tahlil qilib beraman."
+        "Menga matnli savol yoki dasturlash kodi yuboring, javob beraman."
     )
 
 @dp.message(Command("stats"))
@@ -159,41 +122,15 @@ async def stats_handler(message: types.Message):
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
-# Rasmlar kelganda GEMINI ishlaydi
+# Rasm yuborilganda ishlaydigan qism (VIP xabar)
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
-    wait_msg = await message.answer("⏳ Rasm tahlil qilinmoqda...")
-    try:
-        photo = message.photo[-1]
-        file = await bot.get_file(photo.file_id)
-        file_path = file.file_path
-        
-        file_bytes_io = await bot.download_file(file_path)
-        photo_bytes = file_bytes_io.read()
-        
-        image_part = {
-            'mime_type': 'image/jpeg',
-            'data': photo_bytes
-        }
-        
-        caption = message.caption or ""
-        answer_text = await ask_gemini_with_fallback(caption, image_parts=image_part)
-        
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
-            
-        await send_long_message(message, answer_text)
-        
-    except Exception as e:
-        logging.error(f"Rasm xatosi: {e}")
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
-        await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
+    await message.answer(
+        "📸 Rasm VIP tarifga ishlaydi.\n"
+        "VIP tarifga ulanish uchun adminga murojaat qiling.\n\n"
+        "Admin: @Sardorbek_Ai_admin"
+    )
 
 # Matnli xabarlar kelganda GROQ ishlaydi
 @dp.message(F.text & ~F.text.startswith("/"))

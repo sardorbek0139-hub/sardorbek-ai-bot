@@ -35,7 +35,7 @@ async def start_command(message: types.Message):
     
     await message.answer(
         f"Assalomu alaykum! Men — **Sardorbek AI** man. Meni {BOT_IDENTITY} yaratgan.\n\n"
-        "Menga istalgan mavzuda savol bering, batafsil tushuntirib, keyingi qadam uchun qiziqarli variantlarni ham o'zim taklif qilaman!",
+        "Menga istalgan mavzuda savol bering, yordam berishdan xursand bo'laman!",
         parse_mode="Markdown"
     )
 
@@ -57,7 +57,7 @@ async def image_command(message: types.Message):
 
     await message.answer("🖼 Rasm yaratish so'rovi qabul qilindi.")
 
-# ---------------- TEXT HANDLER (UNIVERSAL OPTIONS) ----------------
+# ---------------- TEXT HANDLER ----------------
 @dp.message(F.text)
 async def text_handler(message: types.Message):
     user_id = message.from_user.id
@@ -66,21 +66,20 @@ async def text_handler(message: types.Message):
     user_text = message.text
     user_memory[user_id].append({"role": "user", "content": user_text})
     
-    if len(user_memory[user_id]) > 10:
-        user_memory[user_id] = user_memory[user_id][-10:]
+    # Xotira haddan tashqari uzun bo'lib ketib, eski mavzular aralashib ketmasligi uchun oxirgi 6 ta xabarni qoldiramiz
+    if len(user_memory[user_id]) > 6:
+        user_memory[user_id] = user_memory[user_id][-6:]
 
     try:
-        # Universal system prompt: istalgan mavzuda variantlar chiqarishga o'rgatilgan
+        # Eng qat'iy system prompt (ChatGPT nomini butunlay bloklash uchun)
         system_prompt = {
             "role": "system", 
             "content": (
-                f"Sizning ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
-                "Siz hech qachon o'zingizni ChatGPT, OpenAI yoki boshqa sun'iy intellekt deb atamasligingiz shart! "
-                "Agar sizdan 'Isming nima?' deb so'rashsa, har doim qat'iy ravishda: 'Mening ismim Sardorbek AI' deb javob bering. "
-                "O'zbek tilida ravon, aniq va foydali javob bering. "
-                "MUHIM QOIDA: Foydalanuvchi qanday mavzuda savol berishidan qat'iy nazar (tarix, dasturlash, fan, kundalik savollar va hokazo), "
-                "har doim javobingiz oxirida xuddi ChatGPT kabi o'sha mavzuni davom ettirish uchun qiziqarli variantlar yoki "
-                "'Agar xohlasangiz, [shu mavzu bo'yicha qo'shimcha ma'lumot yoki qisqacha referat] qilib ham beraman' deb takliflar yozib keting."
+                f"Sizning yagona ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
+                "DIQQAT: Siz hech qachon, hech qanday sharoitda o'zingizni ChatGPT, OpenAI yoki boshqa sun'iy intellekt deb atamasligingiz shart! "
+                "Agar sizdan ismingizni so'rashsa, faqat va faqat 'Mening ismim Sardorbek AI' deb javob bering. "
+                "O'zbek tilida ravon, tushunarli va aniq javob bering. "
+                "Javobingiz oxirida foydalanuvchiga shu mavzuni davom ettirish uchun qo'shimcha variantlar yoki takliflar yozib qoldiring."
             )
         }
 
@@ -89,10 +88,14 @@ async def text_handler(message: types.Message):
         completion = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=messages_payload,
-            temperature=0.7
+            temperature=0.5  # Model adashib ketmasligi uchun temperatirani pasaytiramiz
         )
         
         reply_text = completion.choices[0].message.content.strip()
+        
+        # Agar model javobida adashib ChatGPT so'zi kelsa, uni avtomatik ravishda Sardorbek AI ga almashtiramiz
+        reply_text = reply_text.replace("ChatGPT", "Sardorbek AI").replace("chatgpt", "Sardorbek AI")
+
         user_memory[user_id].append({"role": "assistant", "content": reply_text})
         
         await message.answer(reply_text, parse_mode="Markdown")

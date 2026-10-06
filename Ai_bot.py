@@ -35,7 +35,7 @@ async def start_command(message: types.Message):
     user_memory[user_id].clear()
     
     await message.answer(
-        f"Assalomu alaykum! Men — **{BOT_IDENTITY}** tomonidan yaratilgan sun'iy intellekt yordamchisiman.\n\n"
+        f"Assalomu alaykum! Men — **Sardorbek AI** man. Meni {BOT_IDENTITY} yaratgan.\n\n"
         "Menga istalgan mavzuda savol bering, suhbatni birgalikda qiziqarli davom ettiramiz!",
         parse_mode="Markdown"
     )
@@ -71,12 +71,14 @@ async def text_handler(message: types.Message):
         user_memory[user_id] = user_memory[user_id][-10:]
 
     try:
-        # Sun'iy intellektga aniq qoida beramiz: javob oxirida JSON formatida 2 ta mos variant qaytarsin
+        # Sun'iy intellektga ismini qat'iy uqtiradigan kuchaytirilgan system prompt
         system_prompt = {
             "role": "system", 
             "content": (
-                f"Sizning ismingiz: {BOT_IDENTITY}. O'zbek tilida muloqot qilasiz. "
-                "Foydalanuvchining savoliga to'liq javob bergach, javobingiz oxirida shu mavzuni davom ettirish uchun "
+                f"Sizning ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
+                "Siz hech qachon o'zingizni ChatGPT, OpenAI yoki boshqa sun'iy intellekt deb atamasligingiz shart! "
+                "Agar sizdan 'Isming nima?' yoki shunga o'xshash narsa so'rashsa, har doim qat'iy ravishda: 'Mening ismim Sardorbek AI' deb javob bering. "
+                "O'zbek tilida muloqot qilasiz. Foydalanuvchining savoliga to'liq javob bergach, javobingiz oxirida shu mavzuni davom ettirish uchun "
                 "2 ta qisqa va qiziqarli variant taklif qiling. "
                 "Javobingizni quyidagi JSON formatda qaytaring (boshqa ortiqcha narsa yozmang, faqat shu formatda):\n"
                 "{\n"
@@ -96,7 +98,7 @@ async def text_handler(message: types.Message):
         
         raw_response = completion.choices[0].message.content.strip()
         
-        # JSON formatini tozalash (agar AI qo'shimcha belgi qo'shib yuborsa)
+        # JSON formatini tozalash
         if "```json" in raw_response:
             raw_response = raw_response.split("```json")[1].split("```")[0].strip()
         elif "```" in raw_response:
@@ -118,12 +120,11 @@ async def text_handler(message: types.Message):
         await message.answer(reply_text, parse_mode="Markdown", reply_markup=keyboard)
         
     except Exception as e:
-        logging.error(f"Xatolik yuz berdi: {e} | Javob: {locals().get('raw_response', '')}")
-        # Agar JSON xatosi bo'lsa ham oddiy matn sifatida chiqarib yuborish uchun zaxira usul
+        logging.error(f"Xatolik yuz berdi: {e}")
         try:
             fallback_completion = groq_client.chat.completions.create(
                 model="llama-3.1-8b-instant",
-                messages=[{"role": "system", "content": f"Siz {BOT_IDENTITY} siz. O'zbek tilida javob bering."}] + user_memory[user_id],
+                messages=[{"role": "system", "content": f"Sizning ismingiz Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. O'zbek tilida javob bering."}] + user_memory[user_id],
             )
             fallback_text = fallback_completion.choices[0].message.content
             await message.answer(fallback_text, parse_mode="Markdown")
@@ -133,8 +134,7 @@ async def text_handler(message: types.Message):
 # ---------------- CALLBACK QUERY HANDLER ----------------
 @dp.callback_query(F.data.startswith("opt_"))
 async def callback_handler(callback: types.CallbackQuery):
-    # Tugma bosilganda foydalanuvchi tanlagan variantni go'yo o'zi yozgandek qabul qilib javob beramiz
-    selected_option = callback.data[4:] # "opt_" prefiksini olib tashlaymiz
+    selected_option = callback.data[4:]
     await callback.message.answer(f"Tanlovingiz: *{selected_option}*", parse_mode="Markdown")
     await callback.answer()
 

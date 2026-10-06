@@ -34,30 +34,31 @@ async def start_command(message: types.Message):
     
     await message.answer(
         f"Assalomu alaykum! Men — **{BOT_IDENTITY}** tomonidan yaratilgan sun'iy intellekt yordamchisiman.\n\n"
-        "Menga istalgan matnli yoki **ovozli xabar** yuborishingiz mumkin!",
+        "Menga matnli yoki istalgan **ovozli xabar** yuborishingiz mumkin!",
         parse_mode="Markdown"
     )
 
 # ---------------- VOICE MESSAGE HANDLER ----------------
-@dp.message(F.voice)
+@dp.message(F.voice | F.audio)
 async def voice_handler(message: types.Message):
     user_id = message.from_user.id
     save_user(user_id)
     
-    await message.answer("🎙 Ovozli xabaringiz qabul qilindi, matnga o'girilmoqda...")
+    sent_msg = await message.answer("🎙 Ovozli xabaringiz qabul qilindi, matnga o'girilmoqda...")
 
     local_audio_file = f"voice_{user_id}.ogg"
     try:
-        # 1. Ovozli faylni yuklab olish
-        file = await bot.get_file(message.voice.file_id)
+        # 1. Faylni olish va yuklab qo'yish
+        file_id = message.voice.file_id if message.voice else message.audio.file_id
+        file = await bot.get_file(file_id)
         await bot.download_file(file.file_path, local_audio_file)
 
         # 2. Groq Whisper API orqali matnga o'girish
         with open(local_audio_file, "rb") as audio_file:
             transcript = groq_client.audio.transcriptions.create(
                 model="whisper-large-v3",
-                file=audio_file,
-                prompt="O'zbek tilidagi ovozli xabar"
+                file=(local_audio_file, audio_file.read()),
+                language="uz"
             )
         
         user_text = transcript.text
@@ -90,7 +91,7 @@ async def voice_handler(message: types.Message):
         logging.error(f"Ovozli xabarni qayta ishlashda xatolik: {e}")
         if os.path.exists(local_audio_file):
             os.remove(local_audio_file)
-        await message.answer("Kechirasiz, ovozli xabaringizni qayta ishlashda xatolik yuz berdi.")
+        await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
 
 # ---------------- IMAGE COMMAND ----------------
 @dp.message(Command("image"))

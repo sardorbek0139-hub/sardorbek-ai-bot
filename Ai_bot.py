@@ -1,6 +1,5 @@
 import os
 import logging
-import json
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -36,7 +35,7 @@ async def start_command(message: types.Message):
     
     await message.answer(
         f"Assalomu alaykum! Men — **Sardorbek AI** man. Meni {BOT_IDENTITY} yaratgan.\n\n"
-        "Menga istalgan mavzuda savol bering, suhbatni birgalikda qiziqarli davom ettiramiz!",
+        "Menga istalgan mavzuda savol bering, batafsil tushuntirib, keyingi qadam uchun qiziqarli variantlarni ham o'zim taklif qilaman!",
         parse_mode="Markdown"
     )
 
@@ -58,7 +57,7 @@ async def image_command(message: types.Message):
 
     await message.answer("🖼 Rasm yaratish so'rovi qabul qilindi.")
 
-# ---------------- TEXT HANDLER WITH DYNAMIC CONTEXT ----------------
+# ---------------- TEXT HANDLER (UNIVERSAL OPTIONS) ----------------
 @dp.message(F.text)
 async def text_handler(message: types.Message):
     user_id = message.from_user.id
@@ -71,20 +70,17 @@ async def text_handler(message: types.Message):
         user_memory[user_id] = user_memory[user_id][-10:]
 
     try:
-        # Sun'iy intellektga ismini qat'iy uqtiradigan kuchaytirilgan system prompt
+        # Universal system prompt: istalgan mavzuda variantlar chiqarishga o'rgatilgan
         system_prompt = {
             "role": "system", 
             "content": (
                 f"Sizning ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
                 "Siz hech qachon o'zingizni ChatGPT, OpenAI yoki boshqa sun'iy intellekt deb atamasligingiz shart! "
-                "Agar sizdan 'Isming nima?' yoki shunga o'xshash narsa so'rashsa, har doim qat'iy ravishda: 'Mening ismim Sardorbek AI' deb javob bering. "
-                "O'zbek tilida muloqot qilasiz. Foydalanuvchining savoliga to'liq javob bergach, javobingiz oxirida shu mavzuni davom ettirish uchun "
-                "2 ta qisqa va qiziqarli variant taklif qiling. "
-                "Javobingizni quyidagi JSON formatda qaytaring (boshqa ortiqcha narsa yozmang, faqat shu formatda):\n"
-                "{\n"
-                "  \"text\": \"Asosiy javob matni bu yerda...\",\n"
-                "  \"options\": [\"1-variant matni (masalan: G'azallarini yozaymi?)\", \"2-variant matni (masalan: Hayoti haqida aytaymi?)\"]\n"
-                "}"
+                "Agar sizdan 'Isming nima?' deb so'rashsa, har doim qat'iy ravishda: 'Mening ismim Sardorbek AI' deb javob bering. "
+                "O'zbek tilida ravon, aniq va foydali javob bering. "
+                "MUHIM QOIDA: Foydalanuvchi qanday mavzuda savol berishidan qat'iy nazar (tarix, dasturlash, fan, kundalik savollar va hokazo), "
+                "har doim javobingiz oxirida xuddi ChatGPT kabi o'sha mavzuni davom ettirish uchun qiziqarli variantlar yoki "
+                "'Agar xohlasangiz, [shu mavzu bo'yicha qo'shimcha ma'lumot yoki qisqacha referat] qilib ham beraman' deb takliflar yozib keting."
             )
         }
 
@@ -96,47 +92,17 @@ async def text_handler(message: types.Message):
             temperature=0.7
         )
         
-        raw_response = completion.choices[0].message.content.strip()
-        
-        # JSON formatini tozalash
-        if "```json" in raw_response:
-            raw_response = raw_response.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw_response:
-            raw_response = raw_response.split("```")[1].split("```")[0].strip()
-
-        parsed_data = json.loads(raw_response)
-        reply_text = parsed_data.get("text", raw_response)
-        options = parsed_data.get("options", [])
-
+        reply_text = completion.choices[0].message.content.strip()
         user_memory[user_id].append({"role": "assistant", "content": reply_text})
         
-        # Variantlar asosida dinamik tugmalar yasash
-        keyboard_buttons = []
-        for opt in options:
-            keyboard_buttons.append([InlineKeyboardButton(text=opt, callback_data=f"opt_{opt[:20]}")])
-        
-        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons) if keyboard_buttons else None
-        
-        await message.answer(reply_text, parse_mode="Markdown", reply_markup=keyboard)
+        await message.answer(reply_text, parse_mode="Markdown")
         
     except Exception as e:
         logging.error(f"Xatolik yuz berdi: {e}")
-        try:
-            fallback_completion = groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[{"role": "system", "content": f"Sizning ismingiz Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. O'zbek tilida javob bering."}] + user_memory[user_id],
-            )
-            fallback_text = fallback_completion.choices[0].message.content
-            await message.answer(fallback_text, parse_mode="Markdown")
-        except Exception:
-            await message.answer("Kechirasiz, so'rovni bajarishda xatolik yuz berdi. Qaytadan yozib ko'ring.")
-
-# ---------------- CALLBACK QUERY HANDLER ----------------
-@dp.callback_query(F.data.startswith("opt_"))
-async def callback_handler(callback: types.CallbackQuery):
-    selected_option = callback.data[4:]
-    await callback.message.answer(f"Tanlovingiz: *{selected_option}*", parse_mode="Markdown")
-    await callback.answer()
+        if user_memory[user_id]:
+            user_memory[user_id].pop()
+            
+        await message.answer("Kechirasiz, so'rovni bajarishda xatolik yuz berdi. Qaytadan yozib ko'ring.")
 
 # ---------------- MAIN ----------------
 async def main():

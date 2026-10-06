@@ -1,5 +1,6 @@
 import os
 import logging
+import json
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -13,7 +14,6 @@ ADMIN_ID = 123456789  # O'zingizning Telegram ID raqamingiz
 ADMIN_USERNAME_LINK = "https://t.me/@Sardorbek_Ai_admin"
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 
-# Foydalanuvchilar suhbat tarixi uchun xotira
 user_memory = {}
 vip_users = set()
 
@@ -32,11 +32,11 @@ def save_user(user_id):
 async def start_command(message: types.Message):
     user_id = message.from_user.id
     save_user(user_id)
-    user_memory[user_id].clear()  # Start bosilganda xotirani tozalash
+    user_memory[user_id].clear()
     
     await message.answer(
         f"Assalomu alaykum! Men — **{BOT_IDENTITY}** tomonidan yaratilgan sun'iy intellekt yordamchisiman.\n\n"
-        "Menga istalgan matnli savol yuborishingiz mumkin. Savollaringizni bir-biriga bog'lab, muloqotni davom ettira olaman!",
+        "Menga istalgan mavzuda savol bering, suhbatni birgalikda qiziqarli davom ettiramiz!",
         parse_mode="Markdown"
     )
 
@@ -58,52 +58,85 @@ async def image_command(message: types.Message):
 
     await message.answer("🖼 Rasm yaratish so'rovi qabul qilindi.")
 
-# ---------------- TEXT HANDLER (GROQ API WITH MEMORY) ----------------
+# ---------------- TEXT HANDLER WITH DYNAMIC CONTEXT ----------------
 @dp.message(F.text)
 async def text_handler(message: types.Message):
     user_id = message.from_user.id
     save_user(user_id)
     
     user_text = message.text
-    
-    # Foydalanuvchi xabarini xotiraga qo'shamiz
     user_memory[user_id].append({"role": "user", "content": user_text})
     
-    # Xotira juda uzun bo'lib ketmasa uchun oxirgi 10 ta xabarni qoldiramiz
     if len(user_memory[user_id]) > 10:
         user_memory[user_id] = user_memory[user_id][-10:]
 
     try:
-        # Sistema promti: sun'iy intellektga uning vazifasi va kontekstni tushunishi kerakligi uqtiriladi
+        # Sun'iy intellektga aniq qoida beramiz: javob oxirida JSON formatida 2 ta mos variant qaytarsin
         system_prompt = {
             "role": "system", 
             "content": (
-                f"Sizning ismingiz va shaxsingiz: {BOT_IDENTITY}. "
-                "Siz o'zbek tilida javob beruvchi aqlli yordamchisiz. "
-                "Foydalanuvchining oldingi savollari va kontekstini doimo yodda saqlang. "
-                "Masalan, agar foydalanuvchi 'Navoiy kim' deb so'rasa va keyin 'g'azallari' desa, "
-                "bu Alisher Navoiyning g'azallari ekanligini tushunib, unga qarab javob bering."
+                f"Sizning ismingiz: {BOT_IDENTITY}. O'zbek tilida muloqot qilasiz. "
+                "Foydalanuvchining savoliga to'liq javob bergach, javobingiz oxirida shu mavzuni davom ettirish uchun "
+                "2 ta qisqa va qiziqarli variant taklif qiling. "
+                "Javobingizni quyidagi JSON formatda qaytaring (boshqa ortiqcha narsa yozmang, faqat shu formatda):\n"
+                "{\n"
+                "  \"text\": \"Asosiy javob matni bu yerda...\",\n"
+                "  \"options\": [\"1-variant matni (masalan: G'azallarini yozaymi?)\", \"2-variant matni (masalan: Hayoti haqida aytaymi?)\"]\n"
+                "}"
             )
         }
 
-        # API ga system prompt va foydalanuvchining butun oxirgi suhbat tarixini yuboramiz
         messages_payload = [system_prompt] + user_memory[user_id]
 
         completion = groq_client.chat.completions.create(
-            model="openai/gpt-oss-120b",  # yoki mavjud boshqa model
-            messages=messages_payload
+            model="llama-3.1-8b-instant",
+            messages=messages_payload,
+            temperature=0.7
         )
         
-        reply_text = completion.choices[0].message.content
+        raw_response = completion.choices[0].message.content.strip()
         
-        # Botning javobini ham xotiraga yozib qo'yamiz (keyingi safar kontekst uzilib qolmasligi uchun)
+        # JSON formatini tozalash (agar AI qo'shimcha belgi qo'shib yuborsa)
+        if "```json" in raw_response:
+            raw_response = raw_response.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_response:
+            raw_response = raw_response.split("```")[1].split("```")[0].strip()
+
+        parsed_data = json.loads(raw_response)
+        reply_text = parsed_data.get("text", raw_response)
+        options = parsed_data.get("options", [])
+
         user_memory[user_id].append({"role": "assistant", "content": reply_text})
         
-        await message.answer(reply_text, parse_mode="Markdown")
+        # Variantlar asosida dinamik tugmalar yasash
+        keyboard_buttons = []
+        for opt in options:
+            keyboard_buttons.append([InlineKeyboardButton(text=opt, callback_data=f"opt_{opt[:20]}")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons) if keyboard_buttons else None
+        
+        await message.answer(reply_text, parse_mode="Markdown", reply_markup=keyboard)
         
     except Exception as e:
-        logging.error(f"Xatolik yuz berdi: {e}")
-        await message.answer("Kechirasiz, so'rovingizni qayta ishlashda xatolik yuz berdi.")
+        logging.error(f"Xatolik yuz berdi: {e} | Javob: {locals().get('raw_response', '')}")
+        # Agar JSON xatosi bo'lsa ham oddiy matn sifatida chiqarib yuborish uchun zaxira usul
+        try:
+            fallback_completion = groq_client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "system", "content": f"Siz {BOT_IDENTITY} siz. O'zbek tilida javob bering."}] + user_memory[user_id],
+            )
+            fallback_text = fallback_completion.choices[0].message.content
+            await message.answer(fallback_text, parse_mode="Markdown")
+        except Exception:
+            await message.answer("Kechirasiz, so'rovni bajarishda xatolik yuz berdi. Qaytadan yozib ko'ring.")
+
+# ---------------- CALLBACK QUERY HANDLER ----------------
+@dp.callback_query(F.data.startswith("opt_"))
+async def callback_handler(callback: types.CallbackQuery):
+    # Tugma bosilganda foydalanuvchi tanlagan variantni go'yo o'zi yozgandek qabul qilib javob beramiz
+    selected_option = callback.data[4:] # "opt_" prefiksini olib tashlaymiz
+    await callback.message.answer(f"Tanlovingiz: *{selected_option}*", parse_mode="Markdown")
+    await callback.answer()
 
 # ---------------- MAIN ----------------
 async def main():

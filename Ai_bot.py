@@ -6,10 +6,10 @@ import socketserver
 import threading
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from groq import Groq
 import google.generativeai as genai
+from groq import Groq
 
-# Render uchun dummy server
+# Render uchun dummy server (Render port talab qilgani uchun)
 def run_dummy_server():
     PORT = int(os.environ.get("PORT", 10000))
     Handler = http.server.SimpleHTTPRequestHandler
@@ -34,35 +34,43 @@ def save_user(user_id):
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8605848716:AAEJO1uLAjZ0O9VNBSxhACBvqMarVPMTPWw")
 
-# Groq API kalitlari (Render'dan o'qiladi)
-groq_env = os.getenv("API_KEYS", "")
-API_KEYS = [k.strip() for k in groq_env.split(",") if k.strip()]
-
-# Gemini API kalitlari Render'dan o'qiladi
+# Gemini API kalitlari (Rasmlar uchun)
 gemini_env = os.getenv("GEMINI_API_KEYS", "")
 GEMINI_API_KEYS = [k.strip() for k in gemini_env.split(",") if k.strip()]
+
+# Groq API kalitlari (Matnli xabarlar uchun)
+groq_env = os.getenv("API_KEYS", "") # Render'dagi Groq kalitlari nomi
+GROQ_API_KEYS = [k.strip() for k in groq_env.split(",") if k.strip()]
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
+# Umumiy qoidalar (Sardorbek va LaTeX taqiqlash)
+SYSTEM_INSTRUCTION = (
+    "Seni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
+    "Kim yaratganini so'rasa har doim va faqat shuni ayt. "
+    "Aslo LaTeX belgilaridan foydalanma (masalan, \$ yoki \text{...} kabi belgilarni ishlatma). "
+    "Matematik ifodalar va javoblarni tushunarli matn yoki markdown formatida yoz. "
+    "Dasturlash kodlari yoki javoblarni ```til ... ``` bloklariga olib yoz."
+)
+
+# 1. Matnlar uchun Groq funksiyasi
 async def ask_groq_with_fallback(prompt_text):
+    if not GROQ_API_KEYS:
+        raise Exception("Groq API_KEYS topilmadi!")
+        
     last_error = None
-    for i, api_key in enumerate(API_KEYS):
+    for i, api_key in enumerate(GROQ_API_KEYS):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="openai/gpt-oss-120b",
+                model="llama-3.3-70b-versatile", # Matn uchun eng kuchli va tez Groq modeli
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "KESKIN QOIDA 1: Seni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-                            "Kim yaratganini so'rasa har doim va faqat shu javobni ber. Aslo Google yoki Gemini dema.\n"
-                            "KESKIN QOIDA 2: Aslo LaTeX belgilaridan foydalanma!\n"
-                            "KESKIN QOIDA 3: Dasturlash kodlari yoki javoblarni markdown formatidagi ```til ... ``` bloklariga olib yoz."
-                        )
+                        "content": SYSTEM_INSTRUCTION
                     },
                     {
                         "role": "user",
@@ -80,25 +88,33 @@ async def ask_groq_with_fallback(prompt_text):
             
     raise last_error or Exception("Barcha Groq kalitlar limiti tugadi yoki ishlamadi.")
 
-async def analyze_image_with_gemini(photo_bytes, caption_text):
+# 2. Rasmlar uchun Gemini funksiyasi
+async def ask_gemini_with_fallback(prompt_text, image_parts=None):
+    if not GEMINI_API_KEYS:
+        raise Exception("GEMINI_API_KEYS topilmadi!")
+        
     last_error = None
     for i, api_key in enumerate(GEMINI_API_KEYS):
         try:
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel(
+                model_name='gemini-1.5-flash',
+                system_instruction=SYSTEM_INSTRUCTION
+            )
             
-            prompt = caption_text if caption_text else "Bu rasmdagi ma'lumotni, matnni yoki matematik masalani tushuntirib ber."
+            content_list = []
+            if image_parts:
+                content_list.append(image_parts)
             
-            image_part = {
-                'mime_type': 'image/jpeg',
-                'data': photo_bytes
-            }
+            full_prompt = prompt_text if prompt_text else "Bu rasmdagi matnni, testni yoki matematik masalani o'qib, tushuntirib va to'liq yechib ber."
+            content_list.append(full_prompt)
             
-            response = model.generate_content([prompt, image_part])
+            response = model.generate_content(content_list)
             if response and response.text:
                 return response.text
         except Exception as e:
             last_error = e
+            logging.error(f"Gemini {i+1}-kalit xatosi: {e}")
             continue
             
     raise last_error or Exception("Barcha Gemini kalitlar limiti tugadi yoki ishlamadi.")
@@ -142,6 +158,7 @@ async def stats_handler(message: types.Message):
     except Exception as e:
         await message.answer(f"Xatolik: {e}")
 
+# Rasmlar kelganda GEMINI ishlaydi
 @dp.message(F.photo)
 async def photo_handler(message: types.Message):
     save_user(message.from_user.id)
@@ -154,8 +171,13 @@ async def photo_handler(message: types.Message):
         file_bytes_io = await bot.download_file(file_path)
         photo_bytes = file_bytes_io.read()
         
+        image_part = {
+            'mime_type': 'image/jpeg',
+            'data': photo_bytes
+        }
+        
         caption = message.caption or ""
-        answer_text = await analyze_image_with_gemini(photo_bytes, caption)
+        answer_text = await ask_gemini_with_fallback(caption, image_parts=image_part)
         
         try:
             await wait_msg.delete()
@@ -172,6 +194,7 @@ async def photo_handler(message: types.Message):
             pass
         await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
 
+# Matnli xabarlar kelganda GROQ ishlaydi
 @dp.message(F.text & ~F.text.startswith("/"))
 async def answer_question(message: types.Message):
     save_user(message.from_user.id)

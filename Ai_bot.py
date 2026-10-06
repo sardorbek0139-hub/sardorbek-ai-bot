@@ -6,8 +6,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from groq import Groq
 
 # ---------------- CONFIGURATION ----------------
-TOKEN = os.getenv("TELEGRAM_TOKEN", "SIZNING_BOT_TOKENINGIZ")
-GROQ_API_KEY = os.getenv("API_KEYS", "SIZNING_GROQ_API_KEY")
+TOKEN = os.getenv("TELEGRAM_TOKEN", "SIZNING_HAQIQIY_BOT_TOKENINGIZ")
+GROQ_API_KEY = os.getenv("API_KEYS", "SIZNING_HAQIQIY_GROQ_API_KEY")
 ADMIN_ID = 123456789  # O'zingizning Telegram ID raqamingiz
 
 ADMIN_USERNAME_LINK = "https://t.me/@Sardorbek_Ai_admin"
@@ -34,8 +34,7 @@ async def start_command(message: types.Message):
     user_memory[user_id].clear()
     
     await message.answer(
-        f"Assalomu alaykum! Men — **Sardorbek AI** man. Meni {BOT_IDENTITY} yaratgan.\n\n"
-        "Menga istalgan mavzuda savol bering, yordam berishdan xursand bo'laman!",
+        f"Assalomu alaykum! Meni {BOT_IDENTITY} yaratgan. Menga matnli savol yoki dasturlash kodi yuboring, javob beraman.",
         parse_mode="Markdown"
     )
 
@@ -66,12 +65,10 @@ async def text_handler(message: types.Message):
     user_text = message.text
     user_memory[user_id].append({"role": "user", "content": user_text})
     
-    # Xotira haddan tashqari uzun bo'lib ketib, eski mavzular aralashib ketmasligi uchun oxirgi 6 ta xabarni qoldiramiz
     if len(user_memory[user_id]) > 6:
         user_memory[user_id] = user_memory[user_id][-6:]
 
     try:
-        # Eng qat'iy system prompt (ChatGPT nomini butunlay bloklash uchun)
         system_prompt = {
             "role": "system", 
             "content": (
@@ -88,13 +85,14 @@ async def text_handler(message: types.Message):
         completion = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=messages_payload,
-            temperature=0.5  # Model adashib ketmasligi uchun temperatirani pasaytiramiz
+            temperature=0.5
         )
         
         reply_text = completion.choices[0].message.content.strip()
         
-        # Agar model javobida adashib ChatGPT so'zi kelsa, uni avtomatik ravishda Sardorbek AI ga almashtiramiz
-        reply_text = reply_text.replace("ChatGPT", "Sardorbek AI").replace("chatgpt", "Sardorbek AI")
+        # ChatGPT yoki OpenAI nomlarini qat'iy filtrlab, Sardorbek AI ga almashtiramiz
+        for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
+            reply_text = reply_text.replace(forbidden_word, "Sardorbek AI")
 
         user_memory[user_id].append({"role": "assistant", "content": reply_text})
         

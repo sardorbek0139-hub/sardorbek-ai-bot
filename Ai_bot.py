@@ -8,8 +8,8 @@ from aiogram.enums import ParseMode
 from groq import Groq
 
 # ---------------- CONFIGURATION ----------------
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-GROQ_API_KEY = os.getenv("API_KEYS")
+TOKEN = os.getenv("BOT_TOKEN")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 ADMIN_ID = 123456789  # O'zingizning Telegram ID raqamingiz
 
 ADMIN_USERNAME_LINK = "https://t.me/@Sardorbek_Ai_admin"
@@ -18,7 +18,6 @@ BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 user_memory = {}
 vip_users = set()
 
-# Python 3.14 va aiogram mosligi uchun yangi xavfsiz bot obyekti
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
 groq_client = Groq(api_key=GROQ_API_KEY)

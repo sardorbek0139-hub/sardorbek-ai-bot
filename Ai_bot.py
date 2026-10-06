@@ -6,8 +6,9 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from groq import Groq
 
 # ---------------- CONFIGURATION ----------------
-TOKEN = os.getenv("BOT_TOKEN", "SIZNING_BOT_TOKENINGIZ")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "SIZNING_GROQ_API_KEY")
+# Render'dagi nomlarga moslandi (TELEGRAM_TOKEN va API_KEYS)
+TOKEN = os.getenv("TELEGRAM_TOKEN", "SIZNING_BOT_TOKENINGIZ")
+GROQ_API_KEY = os.getenv("API_KEYS", "SIZNING_GROQ_API_KEY")
 ADMIN_ID = 123456789  # O'zingizning Telegram ID raqamingizni yozing
 
 # Admin bilan bog'lanish uchun static havola

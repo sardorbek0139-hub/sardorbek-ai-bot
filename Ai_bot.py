@@ -1,171 +1,121 @@
-import asyncio
-import logging
 import os
-import http.server
-import socketserver
-import threading
-from aiogram import Bot, Dispatcher, types, F
+import logging
+from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from groq import Groq
 
-# Render uchun dummy server
-def run_dummy_server():
-    PORT = int(os.environ.get("PORT", 10000))
-    Handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"Dummy server {PORT}-portda ishga tushdi")
-        httpd.serve_forever()
+# ---------------- CONFIGURATION ----------------
+TOKEN = os.getenv("BOT_TOKEN", "SIZNING_BOT_TOKENINGIZ")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "SIZNING_GROQ_API_KEY")
+ADMIN_ID = 123456789  # O'zingizning Telegram ID raqamingizni yozing
 
-server_thread = threading.Thread(target=run_dummy_server, daemon=True)
-server_thread.start()
+# Admin bilan bog'lanish uchun static havola
+ADMIN_USERNAME_LINK = "https://t.me/@Sardorbek_Ai_admin"
 
-def save_user(user_id):
-    try:
-        users = []
-        if os.path.exists("users.txt"):
-            with open("users.txt", "r") as f:
-                users = f.read().splitlines()
-        if str(user_id) not in users:
-            with open("users.txt", "a") as f:
-                f.write(f"{user_id}\n")
-    except Exception as e:
-        print(f"Foydalanuvchini saqlashda xatolik: {e}")
+# Bot shaxsi va xotirasi
+BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
+user_memory = {}
+vip_users = set()  # VIP foydalanuvchilar ro'yxati
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8605848716:AAEJO1uLAjZ0O9VNBSxhACBvqMarVPMTPWw")
-
-# Groq API kalitlari (Matnli xabarlar uchun Render'dan o'qiydi)
-groq_env = os.getenv("API_KEYS", "") 
-GROQ_API_KEYS = [k.strip() for k in groq_env.split(",") if k.strip()]
-
-bot = Bot(token=TELEGRAM_TOKEN)
+# Botni ishga tushirish
+bot = Bot(token=TOKEN)
 dp = Dispatcher()
+groq_client = Groq(api_key=GROQ_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
-# Qoidalar
-SYSTEM_INSTRUCTION = (
-    "Seni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-    "Kim yaratganini so'rasa har doim va faqat shuni ayt. "
-    "Aslo LaTeX belgilaridan foydalanma (masalan, \$ yoki \text{...} kabi belgilarni ishlatma). "
-    "Matematik formulalar, tenglamalar va kodlarni doimo ```til ... ``` kod bloki (nusxalash tugmasi chiqadigan qilib) ichiga olib yoz. "
-    "Oddiy matn ko'rinishida yozma."
-)
+# Foydalanuvchini ro'yxatga olish funksiyasi
+def save_user(user_id):
+    if user_id not in user_memory:
+        user_memory[user_id] = []
 
-# Matnlar uchun Groq funksiyasi
-async def ask_groq_with_fallback(prompt_text):
-    if not GROQ_API_KEYS:
-        raise Exception("Groq API_KEYS topilmadi!")
-        
-    last_error = None
-    for i, api_key in enumerate(GROQ_API_KEYS):
-        try:
-            client = Groq(api_key=api_key)
-            completion = client.chat.completions.create(
-                model="openai/gpt-oss-120b",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": SYSTEM_INSTRUCTION
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt_text
-                    }
-                ],
-                temperature=0.7,
-            )
-            answer = completion.choices[0].message.content
-            if answer:
-                return answer
-        except Exception as e:
-            last_error = e
-            continue
-            
-    raise last_error or Exception("Barcha Groq kalitlar limiti tugadi yoki ishlamadi.")
-
-async def send_long_message(message: types.Message, text: str):
-    max_length = 4000
-    if len(text) <= max_length:
-        await message.answer(text, parse_mode="Markdown")
-        return
-    
-    for i in range(0, len(text), max_length):
-        chunk = text[i:i + max_length]
-        try:
-            await message.answer(chunk, parse_mode="Markdown")
-        except Exception:
-            await message.answer(chunk)
-
+# ---------------- COMMANDS ----------------
 @dp.message(Command("start"))
-async def start_handler(message: types.Message):
-    save_user(message.from_user.id)
+async def start_command(message: types.Message):
+    user_id = message.from_user.id
+    save_user(user_id)
+    
     await message.answer(
-        "Assalomu alaykum! Meni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
-        "Menga matnli savol yoki dasturlash kodi yuboring, javob beraman."
+        f"Assalomu alaykum! Men — **{BOT_IDENTITY}** tomonidan yaratilgan sun'iy intellekt yordamchisiman.\n\n"
+        "Menga istalgan savolingizni yuborishingiz yoki rasm yaratish / ovozli suhbat rejimlaridan foydalanishingiz mumkin!",
+        parse_mode="Markdown"
     )
 
-@dp.message(Command("stats"))
-async def stats_handler(message: types.Message):
-    try:
-        if os.path.exists("users.txt"):
-            with open("users.txt", "r") as f:
-                users = f.read().splitlines()
-            total_users = len(users)
-            users_list = "\n".join(users[-20:])
-            await message.answer(
-                f"📊 **Bot statistikasi:**\n\n"
-                f"Jami foydalanuvchilar: {total_users} ta\n\n"
-                f"Oxirgi foydalanuvchilar ID lari:\n{users_list}"
+@dp.message(Command("voice"))
+async def voice_chat_command(message: types.Message):
+    save_user(message.from_user.id)
+    
+    # Netlify orqali olingan jonli havola ulandi
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="🎙 Jonli Ovozli Suhbatni Boshlash", 
+                web_app=WebAppInfo(url="https://calm-dieffenbachia-eabf5a.netlify.app")
             )
-        else:
-            await message.answer("Hozircha foydalanuvchilar yo'q.")
-    except Exception as e:
-        await message.answer(f"Xatolik: {e}")
-
-# Rasm yuborilganda ishlaydigan qism (VIP xabar)
-@dp.message(F.photo)
-async def photo_handler(message: types.Message):
-    save_user(message.from_user.id)
+        ]
+    ])
+    
     await message.answer(
-        "📸 Rasm VIP tarifga ishlaydi.\n"
-        "VIP tarifga ulanish uchun adminga murojaat qiling.\n\n"
-        "Admin: @Sardorbek_Ai_admin"
+        "🎙 **Jonli ovozli muloqot rejimi**\n\n"
+        "Sun'iy intellekt bilan real vaqt rejimida ovozli suhbatlashish uchun pastdagi tugmani bosing:",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
     )
 
-# Matnli xabarlar kelganda GROQ ishlaydi
-@dp.message(F.text & ~F.text.startswith("/"))
-async def answer_question(message: types.Message):
-    save_user(message.from_user.id)
-    wait_msg = await message.answer("⏳ O'ylayapman...")
-    answer_text = ""
+# ---------------- IMAGE GENERATION & VIP CHECK ----------------
+@dp.message(Command("image"))
+async def image_command(message: types.Message):
+    user_id = message.from_user.id
+    
+    # VIP cheklovini tekshirish
+    if user_id not in vip_users and user_id != ADMIN_ID:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🔒 VIP huquqni olish", url=ADMIN_USERNAME_LINK)
+            ]
+        ])
+        await message.answer(
+            "⚠️ **Diqqat! Rasm yaratish funksiyasi faqat VIP foydalanuvchilar uchun ochilgan.**\n\n"
+            "Ushbu imkoniyatni yoqish uchun adminga murojaat qiling:",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        return
+
+    await message.answer("🖼 Rasm yaratish so'rovi qabul qilindi. (Bu yerda rasm generatsiya qilish logikasi ishlaydi)")
+
+# ---------------- TEXT HANDLER (GROQ API) ----------------
+@dp.message()
+async def text_handler(message: types.Message):
+    user_id = message.from_user.id
+    save_user(user_id)
+    
+    user_text = message.text
+    user_memory[user_id].append({"role": "user", "content": user_text})
+    
     try:
-        answer_text = await ask_groq_with_fallback(message.text.strip())
+        # Groq API orqali javob olish (gpt-oss-120b modeli)
+        completion = groq_client.chat.completions.create(
+            model="openai/gpt-oss-120b",
+            messages=[
+                {"role": "system", "content": f"Sizning ismingiz va shaxsingiz: {BOT_IDENTITY}. Doimiy ravishda o'zbek tilida professional tarzda javob bering."}
+            ] + user_memory[user_id][-10:]  # Oxirgi 10 ta xabar tarixi
+        )
         
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
-            
-        await send_long_message(message, answer_text)
+        reply_text = completion.choices[0].message.content
+        user_memory[user_id].append({"role": "assistant", "content": reply_text})
+        
+        await message.answer(reply_text, parse_mode="Markdown")
         
     except Exception as e:
-        logging.error(f"Xatolik tafsiloti: {e}")
-        try:
-            await wait_msg.delete()
-        except Exception:
-            pass
-        try:
-            if answer_text:
-                await send_long_message(message, answer_text)
-            else:
-                await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
-        except Exception:
-            await message.answer("❌ Xatolik yuz berdi.")
+        logging.error(f"Xatolik yuz berdi: {e}")
+        await message.answer("Kechirasiz, so'rovingizni qayta ishlashda xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring.")
 
+# ---------------- MAIN ----------------
 async def main():
-    await bot.delete_webhook(drop_pending_updates=True)
-    print("Bot ishga tushdi...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())

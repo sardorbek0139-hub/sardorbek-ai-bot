@@ -98,11 +98,14 @@ async def text_handler(message: types.Message):
         await message.answer(reply_text)
         
     except Exception as e:
-        logging.error(f"Xatolik yuz berdi: {e}")
+        # Xatolikni aniq matn ko'rinishida chatga chiqarib beradi
+        error_msg = f"❌ Xatolik yuz berdi: {str(e)}"
+        logging.error(error_msg)
+        
         if user_memory[user_id]:
             user_memory[user_id].pop()
             
-        await message.answer("Kechirasiz, so'rovni bajarishda xatolik yuz berdi. Qaytadan yozib ko'ring.")
+        await message.answer(error_msg)
 
 # ---------------- MAIN ----------------
 async def main():

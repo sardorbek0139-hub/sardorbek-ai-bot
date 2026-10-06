@@ -48,16 +48,16 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# Umumiy qoidalar
+# Yangilangan qoidalar (Formulalar va kodlar blok ichida chiqishi uchun)
 SYSTEM_INSTRUCTION = (
     "Seni Sardorbek Khudoyberdiyev Dasturchi yaratgan. "
     "Kim yaratganini so'rasa har doim va faqat shuni ayt. "
     "Aslo LaTeX belgilaridan foydalanma (masalan, \$ yoki \text{...} kabi belgilarni ishlatma). "
-    "Matematik ifodalar va javoblarni tushunarli matn yoki markdown formatida yoz. "
-    "Dasturlash kodlari yoki javoblarni ```til ... ``` bloklariga olib yoz."
+    "Matematik formulalar, tenglamalar va kodlarni doimo ```til ... ``` kod bloki (nusxalash tugmasi chiqadigan qilib) ichiga olib yoz. "
+    "Oddiy matn ko'rinishida yozma."
 )
 
-# 1. Matnlar uchun Groq funksiyasi (Model rasmda ko'rsatilganidek yangilandi)
+# 1. Matnlar uchun Groq funksiyasi
 async def ask_groq_with_fallback(prompt_text):
     if not GROQ_API_KEYS:
         raise Exception("Groq API_KEYS topilmadi!")
@@ -67,7 +67,7 @@ async def ask_groq_with_fallback(prompt_text):
         try:
             client = Groq(api_key=api_key)
             completion = client.chat.completions.create(
-                model="openai/gpt-oss-120b",  # Rasmda ko'rsatilgan yangi model
+                model="openai/gpt-oss-120b",
                 messages=[
                     {
                         "role": "system",

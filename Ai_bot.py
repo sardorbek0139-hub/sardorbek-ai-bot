@@ -12,9 +12,9 @@ from groq import Groq
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
 
-# 10 ta kalitni o'qib olish
+# 10 ta kalitni o'qib olish va ortiqcha bo'shliqlarni tozalash
 raw_keys = os.getenv("GROQ_KEYS", "")
-API_KEYS = [key.strip() for key in raw_keys.split(",") if key.strip()]
+API_KEYS = [key.strip() for key in raw_keys.replace("\n", "").split(",") if key.strip()]
 
 if not API_KEYS:
     single_key = os.getenv("GROQ_API_KEY")
@@ -40,7 +40,7 @@ dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# ==================== WEB SERVER (UptimeRobot uchun) ====================
+# ==================== WEB SERVER ====================
 async def handle_ping(request):
     return web.Response(text="Sardorbek AI Bot is active and running!")
 
@@ -94,21 +94,23 @@ async def handle_messages(message: types.Message):
     for _ in range(attempts):
         try:
             groq_client, used_key_num = get_next_groq_client()
+            # Eng barqaror Groq modeli ishlatilmoqda
             completion = groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="llama-3.3-70b-versatile",
                 messages=messages_payload,
                 temperature=0.6
             )
             reply_text = completion.choices[0].message.content.strip()
+            logging.info(f"Muvaffaqiyatli bajarildi. Ishlatilgan kalit raqami: {used_key_num}")
             break
         except Exception as e:
-            logging.warning(f"Kalit xatosi, keyingisiga o'tilmoqda: {str(e)}")
+            logging.warning(f"Kalit xatosi ({used_key_num}-kalit): {str(e)}")
             continue
 
     if not reply_text:
         if user_memory[user_id]:
             user_memory[user_id].pop()
-        await message.answer("Kechirasiz, barcha kalitlar vaqtincha band. Birozdan keyin urinib ko'ring.")
+        await message.answer("Kechirasiz, barcha kalitlar vaqtincha band yoki xatolik yuz berdi. Iltimos, birozdan keyin urinib ko'ring.")
         return
 
     for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
@@ -120,10 +122,7 @@ async def handle_messages(message: types.Message):
 # ==================== MAIN ====================
 async def main():
     await start_web_server()
-    
-    # Eski webhook va keshdagi xabarlarni tozalab yuboramiz
     await bot.delete_webhook(drop_pending_updates=True)
-    
     logging.info("Bot ishga tushdi...")
     await dp.start_polling(bot)
 

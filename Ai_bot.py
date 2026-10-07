@@ -117,7 +117,7 @@ async def handle_messages(message: types.Message):
             try:
                 groq_client = get_next_groq_client()
                 
-                # Barqaror va limiti yuqori bo'lgan model
+                # To'g'ri va ishlaydigan Groq modeli
                 completion = await asyncio.to_thread(
                     groq_client.chat.completions.create,
                     model="llama-3.3-70b-versatile",

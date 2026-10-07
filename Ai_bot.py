@@ -34,6 +34,7 @@ def get_next_groq_client():
 
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 user_memory = {}
+processing_users = set()  # Qotishni oldini olish uchun foydalanuvchilar bloki
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -71,97 +72,89 @@ async def handle_photos(message: types.Message):
         "VIP tarifga ulanish uchun adminga murojaat qiling: @Sardorbek_Ai_admin"
     )
 
-# ==================== MATNLI XABARLAR (ANIMATSIYA BILAN) ====================
+# ==================== MATNLI XABARLAR (QOTISHGA QARSHI HIMOYALANGAN) ====================
 @dp.message(F.text)
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
-    user_text = message.text
 
-    if user_id not in user_memory:
-        user_memory[user_id] = []
-
-    user_memory[user_id].append({"role": "user", "content": user_text})
-    
-    if len(user_memory[user_id]) > 6:
-        user_memory[user_id] = user_memory[user_id][-6:]
-
-    system_prompt = {
-        "role": "system", 
-        "content": (
-            f"Sizning yagona ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
-            "DIQQAT: Siz hech qachon o'zingizni ChatGPT yoki OpenAI deb atamang! "
-            "Ismingizni so'rashsa 'Mening ismim Sardorbek AI, meni Sardorbek Khudoyberdiyev yaratgan' deb javob bering. "
-            "Fizika, matematika yoki boshqa fanlardan formula yoki hisob-kitoblar so'ralganda, ularni albatta HTML kod tegi ichiga yozing: <pre><code>Sizning formulangiz</code></pre>. "
-            "Qalin matnlar uchun <b>...</b> teglari ishlating. Aslo Markdown (**, *, `) ishlatmang! "
-            "O'zbek tilida ravon javob bering. Javobda aslo Markdown qalin matn (**matn**) ishlatmang, faqat HTML (<b>matn</b>) ishlating!"
-        )
-    }
-
-    messages_payload = [system_prompt] + user_memory[user_id]
-    
-    # Animatsiyali xabarni chiqarish (Uchib yonib turadigan matn)
-    processing_msg = await message.answer("<b>Sardorbek AI qidirmoqda.</b>")
-    
-    # Orqa fonda javobni kutish va animatsiyani aylantirish uchun task ochamiz
-    async def animate_loading():
-        dots = [
-            "<b>Sardorbek AI qidirmoqda.</b>",
-            "<b>Sardorbek AI qidirmoqda..</b>",
-            "<b>Sardorbek AI qidirmoqda...</b>"
-        ]
-        i = 0
-        while True:
-            await asyncio.sleep(0.6)
-            i = (i + 1) % len(dots)
-            try:
-                await bot.edit_message_text(dots[i], chat_id=message.chat.id, message_id=processing_msg.message_id)
-            except Exception:
-                break
-
-    animation_task = asyncio.create_task(animate_loading())
-
-    attempts = len(API_KEYS) if API_KEYS else 1
-    reply_text = None
-
-    for _ in range(attempts):
-        try:
-            groq_client, used_key_num = get_next_groq_client()
-            completion = await asyncio.wait_for(
-                asyncio.to_thread(
-                    groq_client.chat.completions.create,
-                    model="openai/gpt-oss-120b",
-                    messages=messages_payload,
-                    temperature=0.6
-                ),
-                timeout=15.0
-            )
-            reply_text = completion.choices[0].message.content.strip()
-            break
-        except asyncio.TimeoutError:
-            logging.warning("Groq vaqti tugadi (Timeout)")
-            continue
-        except Exception as e:
-            logging.warning(f"Groq kalit xatosi: {str(e)}")
-            continue
-
-    # Animatsiyani to'xtatamiz
-    animation_task.cancel()
-
-    if not reply_text:
-        if user_memory[user_id]:
-            user_memory[user_id].pop()
-        await bot.edit_message_text("Kechirasiz, barcha kalitlar vaqtincha band yoki tarmoqda uzilish yuz berdi.", chat_id=message.chat.id, message_id=processing_msg.message_id)
+    # Agar foydalanuvchining oldingi xabari hali ishlov berilayotgan bo'lsa
+    if user_id in processing_users:
+        await message.answer("⏳ <i>Iltimos, avvalgi savolingizga javob kelishini kuting...</i>")
         return
 
-    for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
-        reply_text = reply_text.replace(forbidden_word, "Sardorbek AI")
-
-    user_memory[user_id].append({"role": "assistant", "content": reply_text})
+    processing_users.add(user_id)
     
     try:
-        await bot.edit_message_text(reply_text, chat_id=message.chat.id, message_id=processing_msg.message_id)
-    except Exception:
-        await message.answer(reply_text)
+        user_text = message.text
+
+        if user_id not in user_memory:
+            user_memory[user_id] = []
+
+        user_memory[user_id].append({"role": "user", "content": user_text})
+        
+        if len(user_memory[user_id]) > 6:
+            user_memory[user_id] = user_memory[user_id][-6:]
+
+        system_prompt = {
+            "role": "system", 
+            "content": (
+                f"Sizning yagona ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
+                "DIQQAT: Siz hech qachon o'zingizni ChatGPT yoki OpenAI deb atamang! "
+                "Ismingizni so'rashsa 'Mening ismim Sardorbek AI, meni Sardorbek Khudoyberdiyev yaratgan' deb javob bering. "
+                "Fizika, matematika yoki boshqa fanlardan formula yoki hisob-kitoblar so'ralganda, ularni albatta HTML kod tegi ichiga yozing: <pre><code>Sizning formulangiz</code></pre>. "
+                "Qalin matnlar uchun <b>...</b> teglari ishlating. Aslo Markdown (**, *, `) ishlatmang! "
+                "O'zbek tilida ravon javob bering."
+            )
+        }
+
+        messages_payload = [system_prompt] + user_memory[user_id]
+        
+        # Kutish xabarini chiqarish
+        processing_msg = await message.answer("<b>Sardorbek AI qidirmoqda...</b>")
+
+        attempts = len(API_KEYS) if API_KEYS else 1
+        reply_text = None
+
+        for _ in range(attempts):
+            try:
+                groq_client, used_key_num = get_next_groq_client()
+                completion = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        groq_client.chat.completions.create,
+                        model="openai/gpt-oss-120b",
+                        messages=messages_payload,
+                        temperature=0.6
+                    ),
+                    timeout=15.0
+                )
+                reply_text = completion.choices[0].message.content.strip()
+                break
+            except asyncio.TimeoutError:
+                logging.warning("Groq vaqti tugadi (Timeout)")
+                continue
+            except Exception as e:
+                logging.warning(f"Groq kalit xatosi: {str(e)}")
+                continue
+
+        if not reply_text:
+            if user_memory[user_id]:
+                user_memory[user_id].pop()
+            await bot.edit_message_text("Kechirasiz, barcha kalitlar vaqtincha band yoki tarmoqda uzilish yuz berdi.", chat_id=message.chat.id, message_id=processing_msg.message_id)
+            return
+
+        for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
+            reply_text = reply_text.replace(forbidden_word, "Sardorbek AI")
+
+        user_memory[user_id].append({"role": "assistant", "content": reply_text})
+        
+        try:
+            await bot.edit_message_text(reply_text, chat_id=message.chat.id, message_id=processing_msg.message_id)
+        except Exception:
+            await message.answer(reply_text)
+
+    finally:
+        # Ish tugagach foydalanuvchini blokdan chiqaramiz
+        processing_users.discard(user_id)
 
 # ==================== MAIN ====================
 async def main():

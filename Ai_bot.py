@@ -5,6 +5,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from groq import Groq
 
 # ==================== SOZLAMALAR ====================
@@ -34,7 +35,8 @@ def get_next_groq_client():
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 user_memory = {}
 
-bot = Bot(token=BOT_TOKEN)
+# Chiroyli oyna (kod bloki) ishlashi uchun Markdown yoqildi
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
@@ -82,9 +84,9 @@ async def handle_messages(message: types.Message):
             f"Sizning yagona ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
             "DIQQAT: Siz hech qachon o'zingizni ChatGPT yoki OpenAI deb atamang! "
             "Ismingizni so'rashsa 'Mening ismim Sardorbek AI, meni Sardorbek Khudoyberdiyev yaratgan' deb javob bering. "
-            "Fizika, matematika yoki boshqa fanlardan formula va hisob-kitoblar so'ralganda, ularni aslo murakkab LaTeX teglari (\(\), \dfrac va hokazo) bilan yozmang. "
-            "Barcha formulalar va hisoblarni oddiy tushunarli matn ko'rinishida yoki chiroyli ko'rinish uchun maxsus kod bloklari (``` ichida) yozib bering, shunda Telegram'da toza va o'qishga qulay chiqadi. "
-            "O'zbek tilida ravon javob bering."
+            "Fizika, matematika yoki boshqa fanlardan formula, qonuniyat yoki hisob-kitoblar so'ralganda, ularni albatta chiroyli kod bloki ichiga ( ```text ... ``` yoki ```cpp ... ``` ) olib yozing. "
+            "Shunda Telegram ularni maxsus chiroyli oyna (nusxalash tugmasi bor quti) ko'rinishida chiqaradi. "
+            "O'zbek tilida ravon javob bereing."
         )
     }
 

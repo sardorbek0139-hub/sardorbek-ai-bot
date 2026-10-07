@@ -117,13 +117,17 @@ async def handle_messages(message: types.Message):
             try:
                 groq_client = get_next_groq_client()
                 
-                # To'g'ri va ishlaydigan Groq modeli
+                # Playground'dagi aniq parametrlar bilan so'rov
                 completion = await asyncio.to_thread(
                     groq_client.chat.completions.create,
-                    model="llama-3.3-70b-versatile",
+                    model="openai/gpt-oss-120b",
                     messages=messages_payload,
-                    temperature=0.7,
-                    stream=True
+                    temperature=1,
+                    max_completion_tokens=2048,
+                    top_p=1,
+                    reasoning_effort="medium",
+                    stream=True,
+                    stop=None
                 )
                 
                 full_content = []
@@ -143,7 +147,7 @@ async def handle_messages(message: types.Message):
             if user_memory[user_id]:
                 user_memory[user_id].pop()
             await bot.edit_message_text(
-                "Kechirasiz, vaqtinchalik tarmoqda uzilish yuz berdi. Qaytadan yuboring.", 
+                "Kechirasiz, kunlik limit (Rate limit) tugagan bo'lishi mumkin. Birozdan so'ng qayta urinib ko'ring.", 
                 chat_id=message.chat.id, 
                 message_id=processing_msg.message_id
             )

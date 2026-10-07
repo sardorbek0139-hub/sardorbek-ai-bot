@@ -81,7 +81,7 @@ async def start_command(message: types.Message):
         "Menga istalgan fan bo'yicha matnli savol yuborishingiz yoki <b>rasm yuborib</b> tahlil qilishni so'rashingiz mumkin. Qanday yordam bera olaman?"
     )
 
-# ==================== RASM TUSHUNTIRISH (GEMINI 3.8 FLASH) ====================
+# ==================== RASM TUSHUNTIRISH (GEMINI 1.5 FLASH) ====================
 @dp.message(F.photo)
 async def handle_photos(message: types.Message):
     if not GEMINI_API_KEYS:
@@ -121,10 +121,10 @@ async def handle_photos(message: types.Message):
                     )
                 ]
 
-                # Yangi gemini-3.8-flash modeli va qotishning oldini oluvchi asinxron oqim
+                # Barqaror va xatosiz ishlaydigan gemini-1.5-flash modeli (qotmaydi)
                 response = await asyncio.to_thread(
                     gemini_client.models.generate_content,
-                    model='gemini-3.8-flash',
+                    model='gemini-1.5-flash',
                     contents=prompt_content
                 )
                 reply_text = response.text.strip()

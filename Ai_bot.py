@@ -34,7 +34,6 @@ def get_next_groq_client():
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 user_memory = {}
 
-# ParseMode olib tashlandi, shunda formulalar va belgilar xatosiz chiqadi
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -60,7 +59,7 @@ async def start_command(message: types.Message):
     user_memory[user_id] = []
     await message.answer(
         f"Assalomu alaykum! Meni {BOT_IDENTITY} yaratgan.\n\n"
-        "Menga istalgan fan bo'yicha savol yuborishingiz mumkin (fizika, matematika, dasturlash va hokazo). Qanday yordam bera olaman?"
+        "Menga istalgan fan bo'yicha savol yuborishingiz mumkin. Qanday yordam bera olaman?"
     )
 
 # ==================== XABARLAR ====================
@@ -83,7 +82,8 @@ async def handle_messages(message: types.Message):
             f"Sizning yagona ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
             "DIQQAT: Siz hech qachon o'zingizni ChatGPT yoki OpenAI deb atamang! "
             "Ismingizni so'rashsa 'Mening ismim Sardorbek AI, meni Sardorbek Khudoyberdiyev yaratgan' deb javob bering. "
-            "Fizika, matematika yoki boshqa fanlardan formula va qonuniyatlar so'ralganda, ularni aniq, tushunarli va chiroyli qilib matn ko'rinishida to'liq yozib bering. "
+            "Fizika, matematika yoki boshqa fanlardan formula va hisob-kitoblar so'ralganda, ularni aslo murakkab LaTeX teglari (\(\), \dfrac va hokazo) bilan yozmang. "
+            "Barcha formulalar va hisoblarni oddiy tushunarli matn ko'rinishida yoki chiroyli ko'rinish uchun maxsus kod bloklari (``` ichida) yozib bering, shunda Telegram'da toza va o'qishga qulay chiqadi. "
             "O'zbek tilida ravon javob bering."
         )
     }

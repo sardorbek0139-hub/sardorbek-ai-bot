@@ -4,7 +4,6 @@ import asyncio
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from groq import Groq
@@ -15,11 +14,9 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 PORT = int(os.getenv("PORT", 8080))  # Render avtomatik beradigan port
 
 ADMIN_ID = 123456789  
-ADMIN_USERNAME_LINK = "https://t.me/@Sardorbek_Ai_admin"
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 
 user_memory = {}
-vip_users = set()
 
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
@@ -33,7 +30,6 @@ def save_user(user_id):
 
 # ---------------- WEB SERVER (Monitoring uchun) ----------------
 async def handle_ping(request):
-    # UptimeRobot har gal so'rov yuborganda ushbu javob qaytariladi va bot uxlamaydi
     return web.Response(text="Bot is running and alive!")
 
 async def start_web_server():
@@ -53,7 +49,7 @@ async def start_command(message: types.Message):
     user_memory[user_id].clear()
     
     await message.answer(
-        f"Assalomu alaykum! Meni {BOT_IDENTITY} yaratgan. Menga matnli savol yoki dasturlash kodi yuboring, javob beraman."
+        f"Assalomu alaykum! Meni {BOT_IDENTITY} yaratgan. Menga istalgan matnli savol yoki dasturlash kodi yuboring, javob beraman."
     )
 
 @dp.message(F.text)
@@ -102,9 +98,8 @@ async def text_handler(message: types.Message):
             user_memory[user_id].pop()
         await message.answer(error_msg)
 
-# ---------------- MAIN (Ikkalasini birga yuritish) ----------------
+# ---------------- MAIN ----------------
 async def main():
-    # Veb-serverni va bot polling'ni bir vaqtning o'zida ishga tushiramiz
     await start_web_server()
     await dp.start_polling(bot)
 

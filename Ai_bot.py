@@ -94,9 +94,9 @@ async def handle_messages(message: types.Message):
     for _ in range(attempts):
         try:
             groq_client, used_key_num = get_next_groq_client()
-            # Eng barqaror Groq modeli ishlatilmoqda
+            # Groq'dagi yangi modelga o'zgartirildi
             completion = groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="openai/gpt-oss-120b",
                 messages=messages_payload,
                 temperature=0.6
             )

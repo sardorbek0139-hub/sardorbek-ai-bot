@@ -81,7 +81,7 @@ async def start_command(message: types.Message):
         "Menga istalgan fan bo'yicha matnli savol yuborishingiz yoki <b>rasm yuborib</b> tahlil qilishni so'rashingiz mumkin. Qanday yordam bera olaman?"
     )
 
-# ==================== RASM TUSHUNTIRISH (GEMINI 3.8 FLASH + TIMEOUT) ====================
+# ==================== RASM TUSHUNTIRISH (GEMINI + TIMEOUT) ====================
 @dp.message(F.photo)
 async def handle_photos(message: types.Message):
     if not GEMINI_API_KEYS:
@@ -96,7 +96,7 @@ async def handle_photos(message: types.Message):
         downloaded_file = await bot.download_file(file.file_path)
         image_bytes = downloaded_file.read()
 
-        caption = message.caption or "Ushbu rasmdagi ma'lumotlarni to'liq tushuntirib ber."
+        caption = message.caption or "Ushbu rasmdagi savollarga to'liq javob berib chiq."
 
         attempts = len(GEMINI_API_KEYS)
         reply_text = None
@@ -121,11 +121,11 @@ async def handle_photos(message: types.Message):
                     )
                 ]
 
-                # Gemini 3.8-flash modeli va qotib qolishning oldini oluvchi timeout
+                # Barqaror ishlaydigan va 404 xatosini bermaydigan model
                 response = await asyncio.wait_for(
                     asyncio.to_thread(
                         gemini_client.models.generate_content,
-                        model='gemini-3.8-flash',
+                        model='gemini-2.5-flash',
                         contents=prompt_content
                     ),
                     timeout=25.0

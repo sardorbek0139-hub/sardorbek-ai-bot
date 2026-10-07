@@ -27,9 +27,8 @@ def get_next_groq_client():
     if not API_KEYS:
         raise ValueError("Groq API kalitlari topilmadi!")
     key = API_KEYS[current_groq_index]
-    used_index = current_groq_index + 1
     current_groq_index = (current_groq_index + 1) % len(API_KEYS)
-    return Groq(api_key=key), used_index
+    return Groq(api_key=key)
 
 
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
@@ -72,7 +71,7 @@ async def handle_photos(message: types.Message):
         "VIP tarifga ulanish uchun adminga murojaat qiling: @Sardorbek_Ai_admin"
     )
 
-# ==================== MATNLI XABARLAR (STREAM BILAN) ====================
+# ==================== MATNLI XABARLAR ====================
 @dp.message(F.text)
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
@@ -116,9 +115,9 @@ async def handle_messages(message: types.Message):
 
         for _ in range(attempts):
             try:
-                groq_client, used_key_num = get_next_groq_client()
+                groq_client = get_next_groq_client()
                 
-                # Playground sozlamalariga to'liq mos stream so'rov
+                # Skrinshotdagi aniq parametrlar
                 completion = await asyncio.to_thread(
                     groq_client.chat.completions.create,
                     model="openai/gpt-oss-120b",
@@ -127,10 +126,10 @@ async def handle_messages(message: types.Message):
                     max_completion_tokens=2048,
                     top_p=1,
                     reasoning_effort="medium",
-                    stream=True
+                    stream=True,
+                    stop=None
                 )
                 
-                # Chunklarni yig'ib olish
                 full_content = []
                 for chunk in completion:
                     delta = chunk.choices[0].delta.content

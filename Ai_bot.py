@@ -73,7 +73,7 @@ async def handle_photos(message: types.Message):
         "VIP tarifga ulanish uchun adminga murojaat qiling: @Sardorbek_Ai_admin"
     )
 
-# ==================== MATNLI XABARLAR (TEZKOR VA QOTMAYDIGAN) ====================
+# ==================== MATNLI XABARLAR ====================
 @dp.message(F.text)
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
@@ -119,15 +119,18 @@ async def handle_messages(message: types.Message):
             try:
                 groq_client, used_key_num = get_next_groq_client()
                 
-                # Eng tezkor va yangi model: llama-3.1-8b-instant
+                # Playground parametrlariga moslashtirilgan chaqiruv
                 completion = await asyncio.wait_for(
                     asyncio.to_thread(
                         groq_client.chat.completions.create,
-                        model="llama-3.1-8b-instant",
+                        model="openai/gpt-oss-120b",
                         messages=messages_payload,
-                        temperature=0.5
+                        temperature=1,
+                        max_completion_tokens=2048,
+                        top_p=1,
+                        reasoning_effort="medium"
                     ),
-                    timeout=8.0
+                    timeout=25.0
                 )
                 reply_text = completion.choices[0].message.content.strip()
                 break

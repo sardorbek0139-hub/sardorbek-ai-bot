@@ -81,7 +81,7 @@ async def start_command(message: types.Message):
         "Menga istalgan fan bo'yicha matnli savol yuborishingiz yoki <b>rasm yuborib</b> tahlil qilishni so'rashingiz mumkin. Qanday yordam bera olaman?"
     )
 
-# ==================== RASM TUSHUNTIRISH (GEMINI 1.5 FLASH) ====================
+# ==================== RASM TUSHUNTIRISH (GEMINI 3.8 FLASH + TIMEOUT) ====================
 @dp.message(F.photo)
 async def handle_photos(message: types.Message):
     if not GEMINI_API_KEYS:
@@ -121,17 +121,24 @@ async def handle_photos(message: types.Message):
                     )
                 ]
 
-                # Barqaror va xatosiz ishlaydigan gemini-1.5-flash modeli (qotmaydi)
-                response = await asyncio.to_thread(
-                    gemini_client.models.generate_content,
-                    model='gemini-1.5-flash',
-                    contents=prompt_content
+                # Gemini 3.8-flash modeli va qotib qolishning oldini oluvchi timeout
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        gemini_client.models.generate_content,
+                        model='gemini-3.8-flash',
+                        contents=prompt_content
+                    ),
+                    timeout=25.0
                 )
                 reply_text = response.text.strip()
                 break
+            except asyncio.TimeoutError:
+                last_error = "Gemini vaqti tugadi (Timeout)"
+                logging.warning(f"Gemini timeout ({used_key_num}-kalit)")
+                continue
             except Exception as e:
                 last_error = str(e)
-                logging.warning(f"Gemini kalit xatosi ({used_key_num}-kalit): {last_error}")
+                logging.warning(f"Gemini xatosi ({used_key_num}-kalit): {last_error}")
                 continue
 
         if not reply_text:
@@ -147,7 +154,7 @@ async def handle_photos(message: types.Message):
         logging.error(f"Rasm qayta ishlashda xatolik: {str(err)}")
         await bot.edit_message_text("Kechirasiz, rasmni qayta ishlashda xatolik yuz berdi.", chat_id=message.chat.id, message_id=processing_msg.message_id)
 
-# ==================== MATNLI XABARLAR (GROQ) ====================
+# ==================== MATNLI XABARLAR (GROQ + TIMEOUT) ====================
 @dp.message(F.text)
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
@@ -180,14 +187,20 @@ async def handle_messages(message: types.Message):
     for _ in range(attempts):
         try:
             groq_client, used_key_num = get_next_groq_client()
-            completion = await asyncio.to_thread(
-                groq_client.chat.completions.create,
-                model="openai/gpt-oss-120b",
-                messages=messages_payload,
-                temperature=0.6
+            completion = await asyncio.wait_for(
+                asyncio.to_thread(
+                    groq_client.chat.completions.create,
+                    model="openai/gpt-oss-120b",
+                    messages=messages_payload,
+                    temperature=0.6
+                ),
+                timeout=15.0
             )
             reply_text = completion.choices[0].message.content.strip()
             break
+        except asyncio.TimeoutError:
+            logging.warning("Groq vaqti tugadi (Timeout)")
+            continue
         except Exception as e:
             logging.warning(f"Groq kalit xatosi: {str(e)}")
             continue
@@ -195,7 +208,7 @@ async def handle_messages(message: types.Message):
     if not reply_text:
         if user_memory[user_id]:
             user_memory[user_id].pop()
-        await message.answer("Kechirasiz, barcha kalitlar vaqtincha band yoki xatolik yuz berdi.")
+        await message.answer("Kechirasiz, barcha kalitlar vaqtincha band yoki tarmoqda uzilish yuz berdi.")
         return
 
     for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:

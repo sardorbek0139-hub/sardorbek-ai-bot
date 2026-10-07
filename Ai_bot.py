@@ -117,17 +117,13 @@ async def handle_messages(message: types.Message):
             try:
                 groq_client = get_next_groq_client()
                 
-                # Skrinshotdagi aniq parametrlar
+                # Barqaror va limiti yuqori bo'lgan model
                 completion = await asyncio.to_thread(
                     groq_client.chat.completions.create,
-                    model="openai/gpt-oss-120b",
+                    model="llama-3.3-70b-versatile",
                     messages=messages_payload,
-                    temperature=1,
-                    max_completion_tokens=2048,
-                    top_p=1,
-                    reasoning_effort="medium",
-                    stream=True,
-                    stop=None
+                    temperature=0.7,
+                    stream=True
                 )
                 
                 full_content = []

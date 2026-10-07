@@ -81,14 +81,13 @@ async def start_command(message: types.Message):
         "Menga istalgan fan bo'yicha matnli savol yuborishingiz yoki <b>rasm yuborib</b> tahlil qilishni so'rashingiz mumkin. Qanday yordam bera olaman?"
     )
 
-# ==================== RASM TUSHUNTIRISH (GEMINI 2.5 FLASH) ====================
+# ==================== RASM TUSHUNTIRISH (GEMINI 2.0 FLASH) ====================
 @dp.message(F.photo)
 async def handle_photos(message: types.Message):
     if not GEMINI_API_KEYS:
         await message.answer("Kechirasiz, Gemini API kalitlari sozlanmagan.")
         return
 
-    # Foydalanuvchiga bot qotib qolmagani va o'ylayotgani haqida xabar beramiz
     processing_msg = await message.answer("<b>Rasm tahlil qilinmoqda, biroz kuting...</b>")
 
     try:
@@ -102,6 +101,7 @@ async def handle_photos(message: types.Message):
         attempts = len(GEMINI_API_KEYS)
         reply_text = None
         used_key_num = 0
+        last_error = ""
 
         for _ in range(attempts):
             try:
@@ -121,25 +121,25 @@ async def handle_photos(message: types.Message):
                     )
                 ]
 
-                # Barqaror va tez ishlaydigan gemini-2.5-flash versiyasi
+                # Barqaror va tezkor gemini-2.0-flash modeli
                 response = gemini_client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-2.0-flash',
                     contents=prompt_content
                 )
                 reply_text = response.text.strip()
                 break
             except Exception as e:
-                logging.warning(f"Gemini kalit xatosi ({used_key_num}-kalit): {str(e)}")
+                last_error = str(e)
+                logging.warning(f"Gemini kalit xatosi ({used_key_num}-kalit): {last_error}")
                 continue
 
         if not reply_text:
-            await bot.edit_message_text("Kechirasiz, barcha Gemini kalitlari vaqtincha band yoki xatolik yuz berdi.", chat_id=message.chat.id, message_id=processing_msg.message_id)
+            await bot.edit_message_text(f"Kechirasiz, xatolik yuz berdi: {last_error[:100]}", chat_id=message.chat.id, message_id=processing_msg.message_id)
             return
 
         for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
             reply_text = reply_text.replace(forbidden_word, "Sardorbek AI")
 
-        # Yuklanmoqda xabarini tayyor javob bilan almashtiramiz
         await bot.edit_message_text(reply_text, chat_id=message.chat.id, message_id=processing_msg.message_id)
 
     except Exception as err:

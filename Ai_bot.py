@@ -7,8 +7,6 @@ from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from groq import Groq
-from google import genai
-from google.genai import types as genai_types
 
 # ==================== SOZLAMALAR ====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -32,22 +30,6 @@ def get_next_groq_client():
     used_index = current_groq_index + 1
     current_groq_index = (current_groq_index + 1) % len(API_KEYS)
     return Groq(api_key=key), used_index
-
-
-# --- GEMINI API KALITLAR ---
-raw_gemini_keys = os.getenv("GEMINI_KEYS", "")
-GEMINI_API_KEYS = [key.strip() for key in raw_gemini_keys.replace("\n", "").split(",") if key.strip()]
-
-current_gemini_index = 0
-
-def get_next_gemini_client():
-    global current_gemini_index
-    if not GEMINI_API_KEYS:
-        return None, 0
-    key = GEMINI_API_KEYS[current_gemini_index]
-    used_index = current_gemini_index + 1
-    current_gemini_index = (current_gemini_index + 1) % len(GEMINI_API_KEYS)
-    return genai.Client(api_key=key), used_index
 
 
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
@@ -78,81 +60,16 @@ async def start_command(message: types.Message):
     user_memory[user_id] = []
     await message.answer(
         f"Assalomu alaykum! Meni <b>{BOT_IDENTITY}</b> yaratgan.\n\n"
-        "Menga istalgan fan bo'yicha matnli savol yuborishingiz yoki <b>rasm yuborib</b> tahlil qilishni so'rashingiz mumkin. Qanday yordam bera olaman?"
+        "Menga istalgan fan bo'yicha matnli savol yuborishingiz mumkin. Qanday yordam bera olaman?"
     )
 
-# ==================== RASM TUSHUNTIRISH (GEMINI + TIMEOUT) ====================
+# ==================== RASM UCHUN VIP CHEKLOV ====================
 @dp.message(F.photo)
 async def handle_photos(message: types.Message):
-    if not GEMINI_API_KEYS:
-        await message.answer("Kechirasiz, Gemini API kalitlari sozlanmagan.")
-        return
-
-    processing_msg = await message.answer("<b>Rasm tahlil qilinmoqda, biroz kuting...</b>")
-
-    try:
-        photo = message.photo[-1]
-        file = await bot.get_file(photo.file_id)
-        downloaded_file = await bot.download_file(file.file_path)
-        image_bytes = downloaded_file.read()
-
-        caption = message.caption or "Ushbu rasmdagi savollarga to'liq javob berib chiq."
-
-        attempts = len(GEMINI_API_KEYS)
-        reply_text = None
-        used_key_num = 0
-        last_error = ""
-
-        for _ in range(attempts):
-            try:
-                gemini_client, used_key_num = get_next_gemini_client()
-                
-                prompt_content = [
-                    genai_types.Part.from_bytes(
-                        data=image_bytes,
-                        mime_type='image/jpeg',
-                    ),
-                    (
-                        f"Sizning ismingiz Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
-                        "O'zingizni hech qachon ChatGPT yoki OpenAI deb atamang! "
-                        "DIQQAT: Javoblaringizni formatlashda FAQAT HTML teglaridan foydalaning (masalan, qalin matn uchun <b>matn</b>, kodlar uchun <pre><code>...</code></pre>). "
-                        "Aslo Markdown (**, *, `, ````) belgilarini ishlatmang! "
-                        f"Foydalanuvchi so'rovi: {caption}"
-                    )
-                ]
-
-                # Barqaror ishlaydigan va 404 xatosini bermaydigan model
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        gemini_client.models.generate_content,
-                        model='gemini-2.5-flash',
-                        contents=prompt_content
-                    ),
-                    timeout=25.0
-                )
-                reply_text = response.text.strip()
-                break
-            except asyncio.TimeoutError:
-                last_error = "Gemini vaqti tugadi (Timeout)"
-                logging.warning(f"Gemini timeout ({used_key_num}-kalit)")
-                continue
-            except Exception as e:
-                last_error = str(e)
-                logging.warning(f"Gemini xatosi ({used_key_num}-kalit): {last_error}")
-                continue
-
-        if not reply_text:
-            await bot.edit_message_text(f"Kechirasiz, xatolik yuz berdi: {last_error[:100]}", chat_id=message.chat.id, message_id=processing_msg.message_id)
-            return
-
-        for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
-            reply_text = reply_text.replace(forbidden_word, "Sardorbek AI")
-
-        await bot.edit_message_text(reply_text, chat_id=message.chat.id, message_id=processing_msg.message_id)
-
-    except Exception as err:
-        logging.error(f"Rasm qayta ishlashda xatolik: {str(err)}")
-        await bot.edit_message_text("Kechirasiz, rasmni qayta ishlashda xatolik yuz berdi.", chat_id=message.chat.id, message_id=processing_msg.message_id)
+    await message.answer(
+        "📸 Rasm yuborish faqat <b>VIP tarif</b> foydalanuvchilari uchun ishlaydi.\n\n"
+        "VIP tarifga ulanish uchun adminga murojaat qiling: @Sardorbek_Ai_admin"
+    )
 
 # ==================== MATNLI XABARLAR (GROQ + TIMEOUT) ====================
 @dp.message(F.text)

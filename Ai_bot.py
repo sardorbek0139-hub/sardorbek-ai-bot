@@ -34,7 +34,7 @@ def get_next_groq_client():
     return Groq(api_key=key), used_index
 
 
-# --- GEMINI API KALITLAR (Rasm uchun - 1 dan 5 gacha aylanma tartibda) ---
+# --- GEMINI API KALITLAR ---
 raw_gemini_keys = os.getenv("GEMINI_KEYS", "")
 GEMINI_API_KEYS = [key.strip() for key in raw_gemini_keys.replace("\n", "").split(",") if key.strip()]
 
@@ -53,13 +53,12 @@ def get_next_gemini_client():
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 user_memory = {}
 
-# HTML parse mode (Telegramda matn buzilib ketishining oldini oladi)
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# ==================== WEB SERVER (RENDER UCHUN) ====================
+# ==================== WEB SERVER ====================
 async def handle_ping(request):
     return web.Response(text="Sardorbek AI Bot is active and running!")
 
@@ -82,63 +81,70 @@ async def start_command(message: types.Message):
         "Menga istalgan fan bo'yicha matnli savol yuborishingiz yoki <b>rasm yuborib</b> tahlil qilishni so'rashingiz mumkin. Qanday yordam bera olaman?"
     )
 
-# ==================== RASM TUSHUNTIRISH (GEMINI 3 FLASH PREVIEW) ====================
+# ==================== RASM TUSHUNTIRISH (GEMINI 2.5 FLASH) ====================
 @dp.message(F.photo)
 async def handle_photos(message: types.Message):
     if not GEMINI_API_KEYS:
         await message.answer("Kechirasiz, Gemini API kalitlari sozlanmagan.")
         return
 
-    photo = message.photo[-1]
-    file = await bot.get_file(photo.file_id)
-    downloaded_file = await bot.download_file(file.file_path)
-    image_bytes = downloaded_file.read()
+    # Foydalanuvchiga bot qotib qolmagani va o'ylayotgani haqida xabar beramiz
+    processing_msg = await message.answer("<b>Rasm tahlil qilinmoqda, biroz kuting...</b>")
 
-    caption = message.caption or "Ushbu rasmdagi masalani yoki matnni to'liq tushuntirib ber."
+    try:
+        photo = message.photo[-1]
+        file = await bot.get_file(photo.file_id)
+        downloaded_file = await bot.download_file(file.file_path)
+        image_bytes = downloaded_file.read()
 
-    attempts = len(GEMINI_API_KEYS)
-    reply_text = None
-    used_key_num = 0
+        caption = message.caption or "Ushbu rasmdagi ma'lumotlarni to'liq tushuntirib ber."
 
-    # Aylanma tartibda kalitlarni sinab ko'rish (limit tugasa keyingisiga o'tadi)
-    for _ in range(attempts):
-        try:
-            gemini_client, used_key_num = get_next_gemini_client()
-            
-            prompt_content = [
-                genai_types.Part.from_bytes(
-                    data=image_bytes,
-                    mime_type='image/jpeg',
-                ),
-                (
-                    f"Sizning ismingiz Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
-                    "O'zingizni hech qachon ChatGPT yoki OpenAI deb atamang! "
-                    "DIQQAT: Javoblaringizni formatlashda FAQAT HTML teglaridan foydalaning (masalan, qalin matn uchun <b>matn</b>, formulalar va kodlar uchun esa <pre><code>kod yoki formula</code></pre> teglari). "
-                    "Aslo Markdown (**, *, `, ````) belgilarini ishlatmang! "
-                    f"Foydalanuvchi so'rovi: {caption}"
+        attempts = len(GEMINI_API_KEYS)
+        reply_text = None
+        used_key_num = 0
+
+        for _ in range(attempts):
+            try:
+                gemini_client, used_key_num = get_next_gemini_client()
+                
+                prompt_content = [
+                    genai_types.Part.from_bytes(
+                        data=image_bytes,
+                        mime_type='image/jpeg',
+                    ),
+                    (
+                        f"Sizning ismingiz Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
+                        "O'zingizni hech qachon ChatGPT yoki OpenAI deb atamang! "
+                        "DIQQAT: Javoblaringizni formatlashda FAQAT HTML teglaridan foydalaning (masalan, qalin matn uchun <b>matn</b>, kodlar uchun <pre><code>...</code></pre>). "
+                        "Aslo Markdown (**, *, `, ````) belgilarini ishlatmang! "
+                        f"Foydalanuvchi so'rovi: {caption}"
+                    )
+                ]
+
+                # Barqaror va tez ishlaydigan gemini-2.5-flash versiyasi
+                response = gemini_client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt_content
                 )
-            ]
+                reply_text = response.text.strip()
+                break
+            except Exception as e:
+                logging.warning(f"Gemini kalit xatosi ({used_key_num}-kalit): {str(e)}")
+                continue
 
-            # Eng oxirgi Gemini 3 Flash Preview modeli
-            response = gemini_client.models.generate_content(
-                model='gemini-3-flash-preview',
-                contents=prompt_content
-            )
-            reply_text = response.text.strip()
-            logging.info(f"Gemini muvaffaqiyatli bajarildi. Ishlatilgan kalit raqami: {used_key_num}")
-            break
-        except Exception as e:
-            logging.warning(f"Gemini kalit xatosi ({used_key_num}-kalit): {str(e)}")
-            continue
+        if not reply_text:
+            await bot.edit_message_text("Kechirasiz, barcha Gemini kalitlari vaqtincha band yoki xatolik yuz berdi.", chat_id=message.chat.id, message_id=processing_msg.message_id)
+            return
 
-    if not reply_text:
-        await message.answer("Kechirasiz, barcha Gemini kalitlari vaqtincha band yoki xatolik yuz berdi. Iltimos, birozdan keyin urinib ko'ring.")
-        return
+        for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
+            reply_text = reply_text.replace(forbidden_word, "Sardorbek AI")
 
-    for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
-        reply_text = reply_text.replace(forbidden_word, "Sardorbek AI")
+        # Yuklanmoqda xabarini tayyor javob bilan almashtiramiz
+        await bot.edit_message_text(reply_text, chat_id=message.chat.id, message_id=processing_msg.message_id)
 
-    await message.answer(reply_text)
+    except Exception as err:
+        logging.error(f"Rasm qayta ishlashda xatolik: {str(err)}")
+        await bot.edit_message_text("Kechirasiz, rasmni qayta ishlashda xatolik yuz berdi.", chat_id=message.chat.id, message_id=processing_msg.message_id)
 
 # ==================== MATNLI XABARLAR (GROQ) ====================
 @dp.message(F.text)

@@ -5,7 +5,6 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 from groq import Groq
 
 # ==================== SOZLAMALAR ====================
@@ -35,7 +34,8 @@ def get_next_groq_client():
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 user_memory = {}
 
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
+# ParseMode olib tashlandi, shunda formulalar va belgilar xatosiz chiqadi
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
@@ -60,7 +60,7 @@ async def start_command(message: types.Message):
     user_memory[user_id] = []
     await message.answer(
         f"Assalomu alaykum! Meni {BOT_IDENTITY} yaratgan.\n\n"
-        "Menga istalgan matnli savol yuborishingiz mumkin. Qanday yordam bera olaman?"
+        "Menga istalgan fan bo'yicha savol yuborishingiz mumkin (fizika, matematika, dasturlash va hokazo). Qanday yordam bera olaman?"
     )
 
 # ==================== XABARLAR ====================
@@ -83,6 +83,7 @@ async def handle_messages(message: types.Message):
             f"Sizning yagona ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
             "DIQQAT: Siz hech qachon o'zingizni ChatGPT yoki OpenAI deb atamang! "
             "Ismingizni so'rashsa 'Mening ismim Sardorbek AI, meni Sardorbek Khudoyberdiyev yaratgan' deb javob bering. "
+            "Fizika, matematika yoki boshqa fanlardan formula va qonuniyatlar so'ralganda, ularni aniq, tushunarli va chiroyli qilib matn ko'rinishida to'liq yozib bering. "
             "O'zbek tilida ravon javob bering."
         )
     }
@@ -94,7 +95,6 @@ async def handle_messages(message: types.Message):
     for _ in range(attempts):
         try:
             groq_client, used_key_num = get_next_groq_client()
-            # Groq'dagi yangi modelga o'zgartirildi
             completion = groq_client.chat.completions.create(
                 model="openai/gpt-oss-120b",
                 messages=messages_payload,

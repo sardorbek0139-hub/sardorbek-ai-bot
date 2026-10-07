@@ -7,35 +7,52 @@ from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from groq import Groq
+from google import genai
+from google.genai import types as genai_types
 
 # ==================== SOZLAMALAR ====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
 
-# 10 ta kalitni o'qib olish va ortiqcha bo'shliqlarni tozalash
-raw_keys = os.getenv("GROQ_KEYS", "")
-API_KEYS = [key.strip() for key in raw_keys.replace("\n", "").split(",") if key.strip()]
-
+# --- GROQ API KALITLAR (Matn uchun) ---
+raw_groq_keys = os.getenv("GROQ_KEYS", "")
+API_KEYS = [key.strip() for key in raw_groq_keys.replace("\n", "").split(",") if key.strip()]
 if not API_KEYS:
     single_key = os.getenv("GROQ_API_KEY")
     if single_key:
         API_KEYS = [single_key]
 
-current_key_index = 0
+current_groq_index = 0
 
 def get_next_groq_client():
-    global current_key_index
+    global current_groq_index
     if not API_KEYS:
-        raise ValueError("API kalitlar topilmadi!")
-    key = API_KEYS[current_key_index]
-    used_index = current_key_index + 1
-    current_key_index = (current_key_index + 1) % len(API_KEYS)
+        raise ValueError("Groq API kalitlar topilmadi!")
+    key = API_KEYS[current_groq_index]
+    used_index = current_groq_index + 1
+    current_groq_index = (current_groq_index + 1) % len(API_KEYS)
     return Groq(api_key=key), used_index
+
+
+# --- GEMINI API KALITLAR (Rasm uchun - Navbatma-navbat almashish) ---
+raw_gemini_keys = os.getenv("GEMINI_KEYS", "")
+GEMINI_API_KEYS = [key.strip() for key in raw_gemini_keys.replace("\n", "").split(",") if key.strip()]
+
+current_gemini_index = 0
+
+def get_next_gemini_client():
+    global current_gemini_index
+    if not GEMINI_API_KEYS:
+        return None, 0
+    key = GEMINI_API_KEYS[current_gemini_index]
+    used_index = current_gemini_index + 1
+    current_gemini_index = (current_gemini_index + 1) % len(GEMINI_API_KEYS)
+    return genai.Client(api_key=key), used_index
+
 
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 user_memory = {}
 
-# Chiroyli oyna (kod bloki) ishlashi uchun Markdown yoqildi
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
 
@@ -61,10 +78,57 @@ async def start_command(message: types.Message):
     user_memory[user_id] = []
     await message.answer(
         f"Assalomu alaykum! Meni {BOT_IDENTITY} yaratgan.\n\n"
-        "Menga istalgan fan bo'yicha savol yuborishingiz mumkin. Qanday yordam bera olaman?"
+        "Menga istalgan fan bo'yicha matnli savol yuborishingiz yoki **rasm yuborib** tahlil qilishni so'rashingiz mumkin. Qanday yordam bera olaman?"
     )
 
-# ==================== XABARLAR ====================
+# ==================== RASM TUSHUNTIRISH (GEMINI + ROTATSIYA) ====================
+@dp.message(F.photo)
+async def handle_photos(message: types.Message):
+    if not GEMINI_API_KEYS:
+        await message.answer("Kechirasiz, Gemini API kalitlari sozlanmagan.")
+        return
+
+    photo = message.photo[-1]
+    file = await bot.get_file(photo.file_id)
+    downloaded_file = await bot.download_file(file.file_path)
+    image_bytes = downloaded_file.read()
+
+    caption = message.caption or "Ushbu rasmdagi masalani yoki matnni to'liq tushuntirib ber, formulalar va hisoblarni chiroyli kod bloki ( ```text ... ``` ) ichida yoz."
+
+    attempts = len(GEMINI_API_KEYS)
+    reply_text = None
+    used_key_num = 0
+
+    for _ in range(attempts):
+        try:
+            gemini_client, used_key_num = get_next_gemini_client()
+            response = gemini_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[
+                    genai_types.Part.from_bytes(
+                        data=image_bytes,
+                        mime_type='image/jpeg',
+                    ),
+                    caption
+                ]
+            )
+            reply_text = response.text.strip()
+            logging.info(f"Gemini muvaffaqiyatli bajarildi. Ishlatilgan kalit raqami: {used_key_num}")
+            break
+        except Exception as e:
+            logging.warning(f"Gemini kalit xatosi ({used_key_num}-kalit): {str(e)}")
+            continue
+
+    if not reply_text:
+        await message.answer("Kechirasiz, barcha Gemini kalitlari vaqtincha band yoki xatolik yuz berdi. Iltimos, birozdan keyin urinib ko'ring.")
+        return
+
+    for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
+        reply_text = reply_text.replace(forbidden_word, "Sardorbek AI")
+
+    await message.answer(reply_text)
+
+# ==================== MATNLI XABARLAR (GROQ) ====================
 @dp.message(F.text)
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
@@ -84,9 +148,8 @@ async def handle_messages(message: types.Message):
             f"Sizning yagona ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
             "DIQQAT: Siz hech qachon o'zingizni ChatGPT yoki OpenAI deb atamang! "
             "Ismingizni so'rashsa 'Mening ismim Sardorbek AI, meni Sardorbek Khudoyberdiyev yaratgan' deb javob bering. "
-            "Fizika, matematika yoki boshqa fanlardan formula, qonuniyat yoki hisob-kitoblar so'ralganda, ularni albatta chiroyli kod bloki ichiga ( ```text ... ``` yoki ```cpp ... ``` ) olib yozing. "
-            "Shunda Telegram ularni maxsus chiroyli oyna (nusxalash tugmasi bor quti) ko'rinishida chiqaradi. "
-            "O'zbek tilida ravon javob bereing."
+            "Fizika, matematika yoki boshqa fanlardan formula, qonuniyat yoki hisob-kitoblar so'ralganda, ularni albatta chiroyli kod bloki ichiga ( ```text ... ``` ) olib yozing. "
+            "O'zbek tilida ravon javob bering."
         )
     }
 
@@ -103,16 +166,15 @@ async def handle_messages(message: types.Message):
                 temperature=0.6
             )
             reply_text = completion.choices[0].message.content.strip()
-            logging.info(f"Muvaffaqiyatli bajarildi. Ishlatilgan kalit raqami: {used_key_num}")
             break
         except Exception as e:
-            logging.warning(f"Kalit xatosi ({used_key_num}-kalit): {str(e)}")
+            logging.warning(f"Groq kalit xatosi: {str(e)}")
             continue
 
     if not reply_text:
         if user_memory[user_id]:
             user_memory[user_id].pop()
-        await message.answer("Kechirasiz, barcha kalitlar vaqtincha band yoki xatolik yuz berdi. Iltimos, birozdan keyin urinib ko'ring.")
+        await message.answer("Kechirasiz, barcha kalitlar vaqtincha band yoki xatolik yuz berdi.")
         return
 
     for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:

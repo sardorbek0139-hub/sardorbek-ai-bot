@@ -1,5 +1,7 @@
 import os
 import logging
+import asyncio
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -10,8 +12,9 @@ from groq import Groq
 # ---------------- CONFIGURATION ----------------
 TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-ADMIN_ID = 123456789  # O'zingizning Telegram ID raqamingiz
+PORT = int(os.getenv("PORT", 8080))  # Render avtomatik beradigan port
 
+ADMIN_ID = 123456789  
 ADMIN_USERNAME_LINK = "https://t.me/@Sardorbek_Ai_admin"
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 
@@ -28,7 +31,21 @@ def save_user(user_id):
     if user_id not in user_memory:
         user_memory[user_id] = []
 
-# ---------------- COMMANDS ----------------
+# ---------------- WEB SERVER (Monitoring uchun) ----------------
+async def handle_ping(request):
+    # UptimeRobot har gal so'rov yuborganda ushbu javob qaytariladi va bot uxlamaydi
+    return web.Response(text="Bot is running and alive!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    logging.info(f"Web server started on port {PORT}")
+
+# ---------------- COMMANDS & HANDLERS ----------------
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     user_id = message.from_user.id
@@ -39,24 +56,6 @@ async def start_command(message: types.Message):
         f"Assalomu alaykum! Meni {BOT_IDENTITY} yaratgan. Menga matnli savol yoki dasturlash kodi yuboring, javob beraman."
     )
 
-# ---------------- IMAGE COMMAND & VIP CHECK ----------------
-@dp.message(Command("image"))
-async def image_command(message: types.Message):
-    user_id = message.from_user.id
-    
-    if user_id not in vip_users and user_id != ADMIN_ID:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔒 VIP huquqni olish", url=ADMIN_USERNAME_LINK)]
-        ])
-        await message.answer(
-            "⚠️ **Rasm yaratish funksiyasi faqat VIP foydalanuvchilar uchun!**",
-            reply_markup=keyboard
-        )
-        return
-
-    await message.answer("🖼 Rasm yaratish so'rovi qabul qilindi.")
-
-# ---------------- TEXT HANDLER ----------------
 @dp.message(F.text)
 async def text_handler(message: types.Message):
     user_id = message.from_user.id
@@ -75,8 +74,7 @@ async def text_handler(message: types.Message):
                 f"Sizning yagona ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
                 "DIQQAT: Siz hech qachon, hech qanday sharoitda o'zingizni ChatGPT, OpenAI yoki boshqa sun'iy intellekt deb atamasligingiz shart! "
                 "Agar sizdan ismingizni so'rashsa, faqat va faqat 'Mening ismim Sardorbek AI' deb javob bering. "
-                "O'zbek tilida ravon, tushunarli va aniq javob bering. "
-                "Javobingiz oxirida foydalanuvchiga shu mavzuni davom ettirish uchun qo'shimcha variantlar yoki takliflar yozib qoldiring."
+                "O'zbek tilida ravon, tushunarli va aniq javob bering."
             )
         }
 
@@ -98,19 +96,17 @@ async def text_handler(message: types.Message):
         await message.answer(reply_text)
         
     except Exception as e:
-        # Xatolikni aniq matn ko'rinishida chatga chiqarib beradi
         error_msg = f"❌ Xatolik yuz berdi: {str(e)}"
         logging.error(error_msg)
-        
         if user_memory[user_id]:
             user_memory[user_id].pop()
-            
         await message.answer(error_msg)
 
-# ---------------- MAIN ----------------
+# ---------------- MAIN (Ikkalasini birga yuritish) ----------------
 async def main():
+    # Veb-serverni va bot polling'ni bir vaqtning o'zida ishga tushiramiz
+    await start_web_server()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

@@ -12,7 +12,7 @@ from groq import Groq
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
 
-# --- GROQ API KALITLAR (Matn uchun) ---
+# --- GROQ API KALITLAR ---
 raw_groq_keys = os.getenv("GROQ_KEYS", "")
 API_KEYS = [key.strip() for key in raw_groq_keys.replace("\n", "").split(",") if key.strip()]
 if not API_KEYS:
@@ -65,7 +65,6 @@ async def start_command(message: types.Message):
         "Menga istalgan fan bo'yicha matnli savol yuborishingiz mumkin. Qanday yordam bera olaman?"
     )
 
-# ==================== RASM UCHUN VIP CHEKLOV ====================
 @dp.message(F.photo)
 async def handle_photos(message: types.Message):
     await message.answer(
@@ -73,7 +72,7 @@ async def handle_photos(message: types.Message):
         "VIP tarifga ulanish uchun adminga murojaat qiling: @Sardorbek_Ai_admin"
     )
 
-# ==================== MATNLI XABARLAR ====================
+# ==================== MATNLI XABARLAR (STREAM BILAN) ====================
 @dp.message(F.text)
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
@@ -113,29 +112,36 @@ async def handle_messages(message: types.Message):
         processing_msg = await message.answer("<b>Sardorbek AI qidirmoqda...</b>")
 
         attempts = len(API_KEYS) if API_KEYS else 1
-        reply_text = None
+        reply_text = ""
 
         for _ in range(attempts):
             try:
                 groq_client, used_key_num = get_next_groq_client()
                 
-                # Barqaror va tezkor model
-                completion = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        groq_client.chat.completions.create,
-                        model="llama-3.3-70b-versatile",
-                        messages=messages_payload,
-                        temperature=0.7
-                    ),
-                    timeout=15.0
+                # Playground sozlamalariga to'liq mos stream so'rov
+                completion = await asyncio.to_thread(
+                    groq_client.chat.completions.create,
+                    model="openai/gpt-oss-120b",
+                    messages=messages_payload,
+                    temperature=1,
+                    max_completion_tokens=2048,
+                    top_p=1,
+                    reasoning_effort="medium",
+                    stream=True
                 )
-                reply_text = completion.choices[0].message.content.strip()
-                break
-            except asyncio.TimeoutError:
-                logging.warning("Groq vaqti tugadi (Timeout)")
-                continue
+                
+                # Chunklarni yig'ib olish
+                full_content = []
+                for chunk in completion:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        full_content.append(delta)
+                
+                reply_text = "".join(full_content).strip()
+                if reply_text:
+                    break
             except Exception as e:
-                logging.warning(f"Groq kalit xatosi: {str(e)}")
+                logging.warning(f"Groq stream xatosi: {str(e)}")
                 continue
 
         if not reply_text:

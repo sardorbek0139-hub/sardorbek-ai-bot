@@ -27,7 +27,7 @@ current_groq_index = 0
 def get_next_groq_client():
     global current_groq_index
     if not API_KEYS:
-        raise ValueError("Groq API kalitlar topilmadi!")
+        raise ValueError("Groq API kalitlari topilmadi!")
     key = API_KEYS[current_groq_index]
     used_index = current_groq_index + 1
     current_groq_index = (current_groq_index + 1) % len(API_KEYS)
@@ -81,7 +81,7 @@ async def start_command(message: types.Message):
         "Menga istalgan fan bo'yicha matnli savol yuborishingiz yoki <b>rasm yuborib</b> tahlil qilishni so'rashingiz mumkin. Qanday yordam bera olaman?"
     )
 
-# ==================== RASM TUSHUNTIRISH (GEMINI 2.0 FLASH) ====================
+# ==================== RASM TUSHUNTIRISH (GEMINI 3.8 FLASH) ====================
 @dp.message(F.photo)
 async def handle_photos(message: types.Message):
     if not GEMINI_API_KEYS:
@@ -121,9 +121,10 @@ async def handle_photos(message: types.Message):
                     )
                 ]
 
-                # Barqaror va tezkor gemini-2.0-flash modeli
-                response = gemini_client.models.generate_content(
-                    model='gemini-2.0-flash',
+                # Yangi gemini-3.8-flash modeli va qotishning oldini oluvchi asinxron oqim
+                response = await asyncio.to_thread(
+                    gemini_client.models.generate_content,
+                    model='gemini-3.8-flash',
                     contents=prompt_content
                 )
                 reply_text = response.text.strip()
@@ -179,7 +180,8 @@ async def handle_messages(message: types.Message):
     for _ in range(attempts):
         try:
             groq_client, used_key_num = get_next_groq_client()
-            completion = groq_client.chat.completions.create(
+            completion = await asyncio.to_thread(
+                groq_client.chat.completions.create,
                 model="openai/gpt-oss-120b",
                 messages=messages_payload,
                 temperature=0.6

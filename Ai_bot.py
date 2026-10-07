@@ -12,7 +12,7 @@ from groq import Groq
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
 
-# --- GROQ API KALITLAR ---
+# --- GROQ API KALITLAR (Bir nechta kalitni vergul bilan yozish tavsiya etiladi) ---
 raw_groq_keys = os.getenv("GROQ_KEYS", "")
 API_KEYS = [key.strip() for key in raw_groq_keys.replace("\n", "").split(",") if key.strip()]
 if not API_KEYS:
@@ -117,15 +117,15 @@ async def handle_messages(message: types.Message):
             try:
                 groq_client = get_next_groq_client()
                 
-                # Playground'dagi aniq parametrlar bilan so'rov
+                # Token tejamkorroq va tezroq ishlash uchun sozlandi
                 completion = await asyncio.to_thread(
                     groq_client.chat.completions.create,
                     model="openai/gpt-oss-120b",
                     messages=messages_payload,
-                    temperature=1,
-                    max_completion_tokens=2048,
+                    temperature=0.7,
+                    max_completion_tokens=1024,
                     top_p=1,
-                    reasoning_effort="medium",
+                    reasoning_effort="low",
                     stream=True,
                     stop=None
                 )
@@ -140,14 +140,14 @@ async def handle_messages(message: types.Message):
                 if reply_text:
                     break
             except Exception as e:
-                logging.warning(f"Groq stream xatosi: {str(e)}")
+                logging.warning(f"Groq kalitini almashtirish yoxud xatolik: {str(e)}")
                 continue
 
         if not reply_text:
             if user_memory[user_id]:
                 user_memory[user_id].pop()
             await bot.edit_message_text(
-                "Kechirasiz, kunlik limit (Rate limit) tugagan bo'lishi mumkin. Birozdan so'ng qayta urinib ko'ring.", 
+                "Kechirasiz, barcha Groq API kalitlarning kunlik limiti tugagan ko'rinadi. Birozdan so'ng qayta urinib ko'ring yoki qo'shimcha kalit qo'shing.", 
                 chat_id=message.chat.id, 
                 message_id=processing_msg.message_id
             )

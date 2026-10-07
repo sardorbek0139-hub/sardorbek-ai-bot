@@ -119,18 +119,15 @@ async def handle_messages(message: types.Message):
             try:
                 groq_client, used_key_num = get_next_groq_client()
                 
-                # Playground parametrlariga moslashtirilgan chaqiruv
+                # Barqaror va tezkor model
                 completion = await asyncio.wait_for(
                     asyncio.to_thread(
                         groq_client.chat.completions.create,
-                        model="openai/gpt-oss-120b",
+                        model="llama-3.3-70b-versatile",
                         messages=messages_payload,
-                        temperature=1,
-                        max_completion_tokens=2048,
-                        top_p=1,
-                        reasoning_effort="medium"
+                        temperature=0.7
                     ),
-                    timeout=25.0
+                    timeout=15.0
                 )
                 reply_text = completion.choices[0].message.content.strip()
                 break

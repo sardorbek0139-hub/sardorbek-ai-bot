@@ -34,7 +34,7 @@ def get_next_groq_client():
 
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 user_memory = {}
-processing_users = set()  # Qotishni oldini olish uchun foydalanuvchilar bloki
+processing_users = set()
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -59,6 +59,7 @@ async def start_web_server():
 async def start_command(message: types.Message):
     user_id = message.from_user.id
     user_memory[user_id] = []
+    processing_users.discard(user_id)
     await message.answer(
         f"Assalomu alaykum! Meni <b>{BOT_IDENTITY}</b> yaratgan.\n\n"
         "Menga istalgan fan bo'yicha matnli savol yuborishingiz mumkin. Qanday yordam bera olaman?"
@@ -72,18 +73,18 @@ async def handle_photos(message: types.Message):
         "VIP tarifga ulanish uchun adminga murojaat qiling: @Sardorbek_Ai_admin"
     )
 
-# ==================== MATNLI XABARLAR (QOTISHGA QARSHI HIMOYALANGAN) ====================
+# ==================== MATNLI XABARLAR (TEZKOR VA QOTMAYDIGAN) ====================
 @dp.message(F.text)
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
 
-    # Agar foydalanuvchining oldingi xabari hali ishlov berilayotgan bo'lsa
     if user_id in processing_users:
         await message.answer("⏳ <i>Iltimos, avvalgi savolingizga javob kelishini kuting...</i>")
         return
 
     processing_users.add(user_id)
-    
+    processing_msg = None
+
     try:
         user_text = message.text
 
@@ -109,7 +110,6 @@ async def handle_messages(message: types.Message):
 
         messages_payload = [system_prompt] + user_memory[user_id]
         
-        # Kutish xabarini chiqarish
         processing_msg = await message.answer("<b>Sardorbek AI qidirmoqda...</b>")
 
         attempts = len(API_KEYS) if API_KEYS else 1
@@ -118,14 +118,16 @@ async def handle_messages(message: types.Message):
         for _ in range(attempts):
             try:
                 groq_client, used_key_num = get_next_groq_client()
+                
+                # Eng tezkor va yangi model: llama-3.1-8b-instant
                 completion = await asyncio.wait_for(
                     asyncio.to_thread(
                         groq_client.chat.completions.create,
-                        model="openai/gpt-oss-120b",
+                        model="llama-3.1-8b-instant",
                         messages=messages_payload,
-                        temperature=0.6
+                        temperature=0.5
                     ),
-                    timeout=15.0
+                    timeout=8.0
                 )
                 reply_text = completion.choices[0].message.content.strip()
                 break
@@ -139,7 +141,11 @@ async def handle_messages(message: types.Message):
         if not reply_text:
             if user_memory[user_id]:
                 user_memory[user_id].pop()
-            await bot.edit_message_text("Kechirasiz, barcha kalitlar vaqtincha band yoki tarmoqda uzilish yuz berdi.", chat_id=message.chat.id, message_id=processing_msg.message_id)
+            await bot.edit_message_text(
+                "Kechirasiz, vaqtinchalik tarmoqda uzilish yuz berdi. Qaytadan yuboring.", 
+                chat_id=message.chat.id, 
+                message_id=processing_msg.message_id
+            )
             return
 
         for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
@@ -152,8 +158,14 @@ async def handle_messages(message: types.Message):
         except Exception:
             await message.answer(reply_text)
 
+    except Exception as err:
+        logging.error(f"Xatolik yuz berdi: {err}")
+        if processing_msg:
+            try:
+                await bot.edit_message_text("Kechirasiz, xatolik yuz berdi.", chat_id=message.chat.id, message_id=processing_msg.message_id)
+            except:
+                pass
     finally:
-        # Ish tugagach foydalanuvchini blokdan chiqaramiz
         processing_users.discard(user_id)
 
 # ==================== MAIN ====================

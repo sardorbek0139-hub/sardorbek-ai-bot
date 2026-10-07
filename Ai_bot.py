@@ -71,7 +71,7 @@ async def handle_photos(message: types.Message):
         "VIP tarifga ulanish uchun adminga murojaat qiling: @Sardorbek_Ai_admin"
     )
 
-# ==================== MATNLI XABARLAR (GROQ + TIMEOUT) ====================
+# ==================== MATNLI XABARLAR (ANIMATSIYA BILAN) ====================
 @dp.message(F.text)
 async def handle_messages(message: types.Message):
     user_id = message.from_user.id
@@ -93,11 +93,33 @@ async def handle_messages(message: types.Message):
             "Ismingizni so'rashsa 'Mening ismim Sardorbek AI, meni Sardorbek Khudoyberdiyev yaratgan' deb javob bering. "
             "Fizika, matematika yoki boshqa fanlardan formula yoki hisob-kitoblar so'ralganda, ularni albatta HTML kod tegi ichiga yozing: <pre><code>Sizning formulangiz</code></pre>. "
             "Qalin matnlar uchun <b>...</b> teglari ishlating. Aslo Markdown (**, *, `) ishlatmang! "
-            "O'zbek tilida ravon javob bering."
+            "O'zbek tilida ravon javob bering. Javobda aslo Markdown qalin matn (**matn**) ishlatmang, faqat HTML (<b>matn</b>) ishlating!"
         )
     }
 
     messages_payload = [system_prompt] + user_memory[user_id]
+    
+    # Animatsiyali xabarni chiqarish (Uchib yonib turadigan matn)
+    processing_msg = await message.answer("<b>Sardorbek AI qidirmoqda.</b>")
+    
+    # Orqa fonda javobni kutish va animatsiyani aylantirish uchun task ochamiz
+    async def animate_loading():
+        dots = [
+            "<b>Sardorbek AI qidirmoqda.</b>",
+            "<b>Sardorbek AI qidirmoqda..</b>",
+            "<b>Sardorbek AI qidirmoqda...</b>"
+        ]
+        i = 0
+        while True:
+            await asyncio.sleep(0.6)
+            i = (i + 1) % len(dots)
+            try:
+                await bot.edit_message_text(dots[i], chat_id=message.chat.id, message_id=processing_msg.message_id)
+            except Exception:
+                break
+
+    animation_task = asyncio.create_task(animate_loading())
+
     attempts = len(API_KEYS) if API_KEYS else 1
     reply_text = None
 
@@ -122,17 +144,24 @@ async def handle_messages(message: types.Message):
             logging.warning(f"Groq kalit xatosi: {str(e)}")
             continue
 
+    # Animatsiyani to'xtatamiz
+    animation_task.cancel()
+
     if not reply_text:
         if user_memory[user_id]:
             user_memory[user_id].pop()
-        await message.answer("Kechirasiz, barcha kalitlar vaqtincha band yoki tarmoqda uzilish yuz berdi.")
+        await bot.edit_message_text("Kechirasiz, barcha kalitlar vaqtincha band yoki tarmoqda uzilish yuz berdi.", chat_id=message.chat.id, message_id=processing_msg.message_id)
         return
 
     for forbidden_word in ["ChatGPT", "chatgpt", "Chatgpt", "OpenAI", "openai", "GPT"]:
         reply_text = reply_text.replace(forbidden_word, "Sardorbek AI")
 
     user_memory[user_id].append({"role": "assistant", "content": reply_text})
-    await message.answer(reply_text)
+    
+    try:
+        await bot.edit_message_text(reply_text, chat_id=message.chat.id, message_id=processing_msg.message_id)
+    except Exception:
+        await message.answer(reply_text)
 
 # ==================== MAIN ====================
 async def main():

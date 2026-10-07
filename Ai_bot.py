@@ -34,7 +34,7 @@ def get_next_groq_client():
     return Groq(api_key=key), used_index
 
 
-# --- GEMINI API KALITLAR (Rasm uchun - Navbatma-navbat almashish) ---
+# --- GEMINI API KALITLAR (Rasm uchun - 1 dan 5 gacha aylanma tartibda) ---
 raw_gemini_keys = os.getenv("GEMINI_KEYS", "")
 GEMINI_API_KEYS = [key.strip() for key in raw_gemini_keys.replace("\n", "").split(",") if key.strip()]
 
@@ -53,12 +53,13 @@ def get_next_gemini_client():
 BOT_IDENTITY = "Sardorbek Khudoyberdiyev Dasturchi"
 user_memory = {}
 
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
+# HTML parse mode (Telegramda matn buzilib ketishining oldini oladi)
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 logging.basicConfig(level=logging.INFO)
 
-# ==================== WEB SERVER ====================
+# ==================== WEB SERVER (RENDER UCHUN) ====================
 async def handle_ping(request):
     return web.Response(text="Sardorbek AI Bot is active and running!")
 
@@ -77,11 +78,11 @@ async def start_command(message: types.Message):
     user_id = message.from_user.id
     user_memory[user_id] = []
     await message.answer(
-        f"Assalomu alaykum! Meni {BOT_IDENTITY} yaratgan.\n\n"
-        "Menga istalgan fan bo'yicha matnli savol yuborishingiz yoki **rasm yuborib** tahlil qilishni so'rashingiz mumkin. Qanday yordam bera olaman?"
+        f"Assalomu alaykum! Meni <b>{BOT_IDENTITY}</b> yaratgan.\n\n"
+        "Menga istalgan fan bo'yicha matnli savol yuborishingiz yoki <b>rasm yuborib</b> tahlil qilishni so'rashingiz mumkin. Qanday yordam bera olaman?"
     )
 
-# ==================== RASM TUSHUNTIRISH (GEMINI + ROTATSIYA) ====================
+# ==================== RASM TUSHUNTIRISH (GEMINI 3 FLASH PREVIEW) ====================
 @dp.message(F.photo)
 async def handle_photos(message: types.Message):
     if not GEMINI_API_KEYS:
@@ -93,24 +94,35 @@ async def handle_photos(message: types.Message):
     downloaded_file = await bot.download_file(file.file_path)
     image_bytes = downloaded_file.read()
 
-    caption = message.caption or "Ushbu rasmdagi masalani yoki matnni to'liq tushuntirib ber, formulalar va hisoblarni chiroyli kod bloki ( ```text ... ``` ) ichida yoz."
+    caption = message.caption or "Ushbu rasmdagi masalani yoki matnni to'liq tushuntirib ber."
 
     attempts = len(GEMINI_API_KEYS)
     reply_text = None
     used_key_num = 0
 
+    # Aylanma tartibda kalitlarni sinab ko'rish (limit tugasa keyingisiga o'tadi)
     for _ in range(attempts):
         try:
             gemini_client, used_key_num = get_next_gemini_client()
+            
+            prompt_content = [
+                genai_types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type='image/jpeg',
+                ),
+                (
+                    f"Sizning ismingiz Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
+                    "O'zingizni hech qachon ChatGPT yoki OpenAI deb atamang! "
+                    "DIQQAT: Javoblaringizni formatlashda FAQAT HTML teglaridan foydalaning (masalan, qalin matn uchun <b>matn</b>, formulalar va kodlar uchun esa <pre><code>kod yoki formula</code></pre> teglari). "
+                    "Aslo Markdown (**, *, `, ````) belgilarini ishlatmang! "
+                    f"Foydalanuvchi so'rovi: {caption}"
+                )
+            ]
+
+            # Eng oxirgi Gemini 3 Flash Preview modeli
             response = gemini_client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[
-                    genai_types.Part.from_bytes(
-                        data=image_bytes,
-                        mime_type='image/jpeg',
-                    ),
-                    caption
-                ]
+                model='gemini-3-flash-preview',
+                contents=prompt_content
             )
             reply_text = response.text.strip()
             logging.info(f"Gemini muvaffaqiyatli bajarildi. Ishlatilgan kalit raqami: {used_key_num}")
@@ -148,7 +160,8 @@ async def handle_messages(message: types.Message):
             f"Sizning yagona ismingiz: Sardorbek AI. Sizni {BOT_IDENTITY} yaratgan. "
             "DIQQAT: Siz hech qachon o'zingizni ChatGPT yoki OpenAI deb atamang! "
             "Ismingizni so'rashsa 'Mening ismim Sardorbek AI, meni Sardorbek Khudoyberdiyev yaratgan' deb javob bering. "
-            "Fizika, matematika yoki boshqa fanlardan formula, qonuniyat yoki hisob-kitoblar so'ralganda, ularni albatta chiroyli kod bloki ichiga ( ```text ... ``` ) olib yozing. "
+            "Fizika, matematika yoki boshqa fanlardan formula yoki hisob-kitoblar so'ralganda, ularni albatta HTML kod tegi ichiga yozing: <pre><code>Sizning formulangiz</code></pre>. "
+            "Qalin matnlar uchun <b>...</b> teglari ishlating. Aslo Markdown (**, *, `) ishlatmang! "
             "O'zbek tilida ravon javob bering."
         )
     }
